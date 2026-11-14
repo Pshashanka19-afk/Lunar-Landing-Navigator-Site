@@ -1,0 +1,64 @@
+{
+  "manifestVersion": "1.0.0",
+  "retrievalDate": "2026-10-29T18:00:00Z",
+  "sourceProvider": "NASA/JPL NAIF (Navigation and Ancillary Information Facility)",
+  "kernels": [
+    {
+      "filename": "naif0012.tls",
+      "type": "LSK",
+      "description": "Generic leapseconds kernel providing UTC to TAI/ET/TDB conversion offsets",
+      "sourceUrl": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/naif0012.tls",
+      "sizeBytes": 5257,
+      "sha256": "678e32bdb5a744117a467cd9601cd6b373f0e9bc9bbde1371d5eee39600a039b",
+      "timeCoverage": "1972-01-01 to current"
+    },
+    {
+      "filename": "pck00010.tpc",
+      "type": "PCK (Text)",
+      "description": "IAU/IAG planetary constants and orientation parameters for Solar System bodies",
+      "sourceUrl": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00010.tpc",
+      "sizeBytes": 126143,
+      "sha256": "59468328349aa730d18bf1f8d7e86efe6e40b75dfb921908f99321b3a7a701d2",
+      "referenceFrames": ["IAU_MOON", "IAU_EARTH", "IAU_SUN"]
+    },
+    {
+      "filename": "de421.bsp",
+      "type": "SPK (Binary)",
+      "description": "JPL Planetary Ephemeris DE421 covering Sun, Earth, Moon, and major planets",
+      "sourceUrl": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/a_old_versions/de421.bsp",
+      "sizeBytes": 16790528,
+      "sha256": "08b20db2ae22488650641c5a9033e5bfda4b1c4b440cfeaf20f621cfa18ecdb3",
+      "timeCoverage": "1900-01-01 to 2050-01-01 TDB",
+      "targetBodies": ["SUN (10)", "EARTH-MOON BARYCENTER (3)", "EARTH (399)", "MOON (301)"]
+    },
+    {
+      "filename": "de440s.bsp",
+      "type": "SPK (Binary)",
+      "description": "JPL Planetary Ephemeris DE440s short-interval high-accuracy modern ephemeris",
+      "sourceUrl": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de440s.bsp",
+      "sizeBytes": 32726016,
+      "sha256": "c1c7feeab882263fc493a9d5a5b2ddd71b54826cdf65d8d17a76126b260a49f2",
+      "timeCoverage": "1900-01-01 to 2050-01-01 TDB",
+      "targetBodies": ["SUN (10)", "EARTH-MOON BARYCENTER (3)", "EARTH (399)", "MOON (301)"]
+    },
+    {
+      "filename": "moon_080317.tf",
+      "type": "FK",
+      "description": "SPICE Lunar Frame specification defining Mean Earth / Polar Axis (MOON_ME) and Principal Axes (MOON_PA)",
+      "sourceUrl": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/fk/satellites/moon_080317.tf",
+      "sizeBytes": 21437,
+      "sha256": "78732477b96f9863e7b0d65bcee3c22b8707ca5ed0db56d1173319cb2e8c7993",
+      "referenceFrames": ["MOON_ME (31006)", "MOON_PA (31007)"]
+    },
+    {
+      "filename": "moon_pa_de421_1900-2050.bpc",
+      "type": "PCK (Binary)",
+      "description": "High-precision lunar orientation and physical libration kernel derived from DE421",
+      "sourceUrl": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/moon_pa_de421_1900-2050.bpc",
+      "sizeBytes": 1770496,
+      "sha256": "656f90616403d75a75f0cd6c8830fc5b44f8cb4facb5ccb8915e752b397520cf",
+      "timeCoverage": "1900-01-01 to 2050-01-01 TDB",
+      "targetBody": "MOON (301)"
+    }
+  ]
+}

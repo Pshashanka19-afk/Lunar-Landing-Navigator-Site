@@ -1,0 +1,91 @@
+{
+  "datasetId": "lunar-south-pole",
+  "productName": "NASA LOLA Lunar South Pole Digital Elevation Model (80 m/pix)",
+  "officialSource": "NASA GSFC Planetary Geodesy, Geophysics, and Geochemistry Archive (PGDA) Product 90 / LRO LOLA Team",
+  "sourceUrl": "https://pgda.gsfc.nasa.gov/data/LOLA_20mpp/LDEM_80S_80MPP_ADJ.TIF",
+  "referencePublication": "Barker, M. K. et al., 'A New View of the Lunar South Pole from LOLA', NASA GSFC (2023)",
+  "retrievalDate": "2026-10-29T18:00:00Z",
+  "filename": "lunar-south-pole.tif",
+  "format": "GeoTIFF (Cloud-Optimized Float32 Raster)",
+  "sizeBytes": 25000966,
+  "sha256": "360cccbd51f1f354b99fcc7dd7b8f9f6e53ae39f513834f42c59599790e5033c",
+  "rasterDimensions": {
+    "width": 2500,
+    "height": 2500,
+    "bands": 1
+  },
+  "pixelSpacingMeters": {
+    "x": 80.0,
+    "y": 80.0
+  },
+  "coordinateReferenceSystem": {
+    "name": "Moon (2015) - Sphere / Ocentric / South Polar",
+    "projection": "Polar Stereographic (variant A)",
+    "latitudeOfNaturalOriginDeg": -90.0,
+    "longitudeOfNaturalOriginDeg": 0.0,
+    "scaleFactorAtOrigin": 1.0,
+    "falseEastingMeters": 0.0,
+    "falseNorthingMeters": 0.0,
+    "ellipsoid": {
+      "name": "Moon (2015) - Sphere",
+      "semiMajorAxisMeters": 1737400.0,
+      "inverseFlattening": 0.0
+    }
+  },
+  "projectedBounds": {
+    "minX": -150000.0,
+    "maxX": 50000.0,
+    "minY": -150000.0,
+    "maxY": 50000.0
+  },
+  "geographicBounds": {
+    "minLatitudeDeg": -90.0,
+    "maxLatitudeDeg": -83.013,
+    "minLongitudeDeg": -180.0,
+    "maxLongitudeDeg": 180.0
+  },
+  "elevationProperties": {
+    "units": "meters",
+    "verticalDatum": "1737400m lunar reference radius sphere",
+    "dataType": "Float32",
+    "noDataValue": "NaN",
+    "elevationRangeMeters": {
+      "minimum": -7295.5,
+      "maximum": 7026.3
+    }
+  },
+  "demonstrationSitesCovered": [
+    {
+      "id": "shackleton-connecting-ridge",
+      "name": "Shackleton Crater - Connecting Ridge",
+      "latitudeDeg": -89.78,
+      "longitudeDeg": 125.4,
+      "elevationMeters": 1413.9,
+      "projectedCoordinates": { "x": 5437.8, "y": 3864.5 }
+    },
+    {
+      "id": "de-gerlache-rim",
+      "name": "de Gerlache Crater Rim",
+      "latitudeDeg": -88.71,
+      "longitudeDeg": -88.35,
+      "elevationMeters": -1148.2,
+      "projectedCoordinates": { "x": -39102.6, "y": -1126.4 }
+    },
+    {
+      "id": "haworth-crater-rim",
+      "name": "Haworth Crater Rim Plateau",
+      "latitudeDeg": -87.45,
+      "longitudeDeg": -5.10,
+      "elevationMeters": -1828.2,
+      "projectedCoordinates": { "x": -6874.8, "y": -77031.1 }
+    },
+    {
+      "id": "malapert-mountain",
+      "name": "Malapert Mountain",
+      "latitudeDeg": -85.99,
+      "longitudeDeg": 2.91,
+      "elevationMeters": -2854.7,
+      "projectedCoordinates": { "x": 6175.6, "y": -121489.4 }
+    }
+  ]
+}
