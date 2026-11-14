@@ -1,12 +1,15 @@
 # LUNARIS — Unified Sun-Centric 3D Solar System & Lunar Mission Navigator
 
 [![NASA Space Apps Challenge 2026](https://img.shields.io/badge/NASA%20Space%20Apps-2026-blue.svg)](https://www.spaceappschallenge.org/)
+[![Live Deployment](https://img.shields.io/badge/Live%20Demo-Render-46E3B7.svg?logo=render&logoColor=white)](https://lunar-missionbrowser-1.onrender.com)
 [![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](https://opensource.org/licenses/ISC)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x%20%7C%207.x-3178C6.svg)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-19.2-61DAFB.svg)](https://react.dev/)
 [![Three.js](https://img.shields.io/badge/Three.js-0.186-black.svg)](https://threejs.org/)
 [![Vite](https://img.shields.io/badge/Vite-8.3-646CFF.svg)](https://vitejs.dev/)
 [![Express](https://img.shields.io/badge/Express-5.3-000000.svg)](https://expressjs.com/)
+
+> 🚀 **Live Deployment**: [https://lunar-missionbrowser-1.onrender.com](https://lunar-missionbrowser-1.onrender.com)
 
 **LUNARIS** is an aerospace-grade planetary visualization and mission analysis platform designed for evaluating lunar landing sites, solar illumination regimes, and Direct-to-Earth (DTE) communication windows for NASA's Commercial Lunar Payload Services (CLPS) and Artemis expeditions.
 
@@ -155,7 +158,11 @@ LUNARIS bridges this gap by unifying **JPL DE440 planetary ephemerides**, **LOLA
 
 ---
 
-## 6. Getting Started
+## 6. Live Deployment & Getting Started
+
+### Live Application
+Access the live cloud deployment directly in your browser:
+- **Production URL**: [https://lunar-missionbrowser-1.onrender.com](https://lunar-missionbrowser-1.onrender.com)
 
 ### Prerequisites
 - **Node.js**: `v18.0.0` or higher
