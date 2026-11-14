@@ -179,29 +179,6 @@ export function moonMeToThree(x_me: number, y_me: number, z_me: number): THREE.V
 }
 
 /**
- * Generates procedural solar corona radial gradient texture.
- */
-function createCoronaTexture(): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 256;
-  const ctx = canvas.getContext('2d');
-  if (ctx) {
-    const grad = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
-    grad.addColorStop(0.0, 'rgba(255, 255, 255, 1.0)');
-    grad.addColorStop(0.18, 'rgba(255, 235, 170, 0.95)');
-    grad.addColorStop(0.40, 'rgba(255, 180, 50, 0.45)');
-    grad.addColorStop(0.70, 'rgba(255, 120, 20, 0.15)');
-    grad.addColorStop(1.0, 'rgba(0, 0, 0, 0.0)');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 256, 256);
-  }
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.needsUpdate = true;
-  return tex;
-}
-
-/**
  * Generates high-contrast aerospace billboard text sprite for celestial bodies.
  */
 function createBillboardSprite(title: string, subtitle: string, accentColor: string): THREE.Sprite {
@@ -746,7 +723,6 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
     earthDay: THREE.Texture | null;
     earthNight: THREE.Texture | null;
     earthClouds: THREE.Texture | null;
-    sunCorona: THREE.Texture | null;
     sunPhotosphere: THREE.Texture | null;
   }>({
     lrocColor: null,
@@ -755,7 +731,6 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
     earthDay: null,
     earthNight: null,
     earthClouds: null,
-    sunCorona: null,
     sunPhotosphere: null,
   });
 
@@ -1057,8 +1032,6 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
     const sunPhotosphere = textureLoader.load('/textures/sun/sun_photosphere_2k.jpg', checkLoaded);
     sunPhotosphere.colorSpace = THREE.SRGBColorSpace;
 
-    const sunCorona = createCoronaTexture();
-
     const maxAnisotropy = Math.min(16, renderer.capabilities.getMaxAnisotropy());
     [lrocColor, elevation, bumpMap, earthDay, earthNight, earthClouds, sunPhotosphere].forEach((tex) => {
       if (!tex) return;
@@ -1075,7 +1048,6 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
       earthDay,
       earthNight,
       earthClouds,
-      sunCorona,
       sunPhotosphere,
     };
 
@@ -1143,31 +1115,6 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
     const sunMesh = new THREE.Mesh(sunGeo, sunShaderMat);
     sunTiltGroup.add(sunMesh);
     sunMeshRef.current = sunMesh;
-
-    // Inner Corona Sprite
-    const coronaMat = new THREE.SpriteMaterial({
-      map: sunCorona,
-      color: 0xffffff,
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-    const coronaSprite = new THREE.Sprite(coronaMat);
-    coronaSprite.scale.set(40, 40, 1);
-    sunGroup.add(coronaSprite);
-
-    // Outer Solar Glow Halo
-    const outerHaloMat = new THREE.SpriteMaterial({
-      map: sunCorona,
-      color: 0xffeedd,
-      transparent: true,
-      opacity: 0.40,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-    const outerHaloSprite = new THREE.Sprite(outerHaloMat);
-    outerHaloSprite.scale.set(85, 85, 1);
-    sunGroup.add(outerHaloSprite);
 
     // 3D Sun Rotational Axis Indicator (7.25° tilt to ecliptic)
     const sunAxisGeo = new THREE.BufferGeometry().setFromPoints([

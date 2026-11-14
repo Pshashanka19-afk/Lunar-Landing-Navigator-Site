@@ -217,70 +217,6 @@ export const ThreeSunEarthMoon: React.FC<{ className?: string }> = ({ className 
     sunGroup.position.copy(SUN_POSITION);
     scene.add(sunGroup);
 
-    // High-Resolution Radial Solar Corona Glare Texture
-    const createSunCoronaTexture = (): THREE.CanvasTexture => {
-      const canvas = document.createElement('canvas');
-      canvas.width = 1024;
-      canvas.height = 1024;
-      const ctx = canvas.getContext('2d')!;
-      const center = 512;
-
-      // Multi-stop photorealistic radiance gradient (blinding white to deep incandescent space fade)
-      const grad = ctx.createRadialGradient(center, center, 0, center, center, 512);
-      grad.addColorStop(0.0, 'rgba(255, 255, 255, 1.0)');     // Pure white-hot nuclear core
-      grad.addColorStop(0.09, 'rgba(255, 252, 235, 0.98)');   // Incandescent white-gold
-      grad.addColorStop(0.19, 'rgba(255, 225, 125, 0.75)');   // Chromosphere gold
-      grad.addColorStop(0.34, 'rgba(255, 155, 35, 0.42)');    // Solar plasma amber
-      grad.addColorStop(0.52, 'rgba(255, 85, 10, 0.16)');     // Outer corona orange
-      grad.addColorStop(0.75, 'rgba(210, 40, 0, 0.05)');      // Deep corona fade
-      grad.addColorStop(1.0, 'rgba(0, 0, 0, 0)');              // Space vacuum
-
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, 1024, 1024);
-
-      // Delicate solar diffraction spikes / corona rays (SpaceX / James Webb telescope glare)
-      ctx.save();
-      ctx.translate(center, center);
-      const spikeCount = 8;
-      for (let i = 0; i < spikeCount; i++) {
-        ctx.rotate(Math.PI / (spikeCount / 2));
-        const spikeGrad = ctx.createLinearGradient(-512, 0, 512, 0);
-        spikeGrad.addColorStop(0.0, 'rgba(0, 0, 0, 0)');
-        spikeGrad.addColorStop(0.35, 'rgba(255, 190, 80, 0.03)');
-        spikeGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.35)');
-        spikeGrad.addColorStop(0.65, 'rgba(255, 190, 80, 0.03)');
-        spikeGrad.addColorStop(1.0, 'rgba(0, 0, 0, 0)');
-
-        ctx.fillStyle = spikeGrad;
-        ctx.fillRect(-512, -2.0, 1024, 4.0);
-      }
-      ctx.restore();
-
-      return new THREE.CanvasTexture(canvas);
-    };
-
-    // Soft Anamorphic Optical Flare Streak
-    const createAnamorphicFlareTexture = (): THREE.CanvasTexture => {
-      const canvas = document.createElement('canvas');
-      canvas.width = 1024;
-      canvas.height = 128;
-      const ctx = canvas.getContext('2d')!;
-
-      const grad = ctx.createRadialGradient(512, 64, 0, 512, 64, 512);
-      grad.addColorStop(0.0, 'rgba(255, 255, 255, 0.7)');
-      grad.addColorStop(0.2, 'rgba(255, 215, 130, 0.35)');
-      grad.addColorStop(0.5, 'rgba(255, 140, 40, 0.12)');
-      grad.addColorStop(1.0, 'rgba(0, 0, 0, 0)');
-
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, 1024, 128);
-
-      return new THREE.CanvasTexture(canvas);
-    };
-
-    const sunCoronaTex = createSunCoronaTexture();
-    const anamorphicTex = createAnamorphicFlareTexture();
-
     // 1. Central White-Hot Solar Core Sphere
     const sunRadius = 8.5;
     const sunGeo = new THREE.SphereGeometry(sunRadius, 48, 48);
@@ -337,44 +273,6 @@ export const ThreeSunEarthMoon: React.FC<{ className?: string }> = ({ className 
 
     const sunMesh = new THREE.Mesh(sunGeo, sunShaderMat);
     sunGroup.add(sunMesh);
-
-    // 2. Primary Solar Corona Sprite (Always camera-facing, blinding optical glare)
-    const coronaMat = new THREE.SpriteMaterial({
-      map: sunCoronaTex,
-      color: 0xffffff,
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-    const coronaSprite = new THREE.Sprite(coronaMat);
-    coronaSprite.scale.set(48, 48, 1);
-    sunGroup.add(coronaSprite);
-
-    // 3. Expansive Outer Atmosphere Halo Sprite
-    const outerHaloMat = new THREE.SpriteMaterial({
-      map: sunCoronaTex,
-      color: 0xff8811,
-      transparent: true,
-      opacity: 0.55,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-    const outerHaloSprite = new THREE.Sprite(outerHaloMat);
-    outerHaloSprite.scale.set(88, 88, 1);
-    sunGroup.add(outerHaloSprite);
-
-    // 4. Subtle Anamorphic Cinematic Lens Flare
-    const anamorphicMat = new THREE.SpriteMaterial({
-      map: anamorphicTex,
-      color: 0xffe6b0,
-      transparent: true,
-      opacity: 0.45,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-    const anamorphicSprite = new THREE.Sprite(anamorphicMat);
-    anamorphicSprite.scale.set(110, 14, 1);
-    sunGroup.add(anamorphicSprite);
 
     // Physical Directional Sunlight
     const sunLight = new THREE.DirectionalLight(0xfffaea, 3.6);
@@ -469,12 +367,8 @@ export const ThreeSunEarthMoon: React.FC<{ className?: string }> = ({ className 
       earthMesh.rotation.y += safeDelta * 0.12;
       cloudMesh.rotation.y += safeDelta * 0.16;
 
-      // Sun plasma turbulence animation & corona breathing
+      // Sun plasma turbulence animation
       sunShaderMat.uniforms.uTime.value = elapsed;
-      const pulse = 1.0 + Math.sin(elapsed * 1.5) * 0.02;
-      coronaSprite.scale.set(48 * pulse, 48 * pulse, 1);
-      outerHaloSprite.scale.set(88 * pulse, 88 * pulse, 1);
-      anamorphicSprite.scale.set(110 * pulse, 14 * pulse, 1);
 
       // Continuous Elliptical Revolutionary Motion of the Moon
       orbitAngle += safeDelta * 0.09;
@@ -534,11 +428,6 @@ export const ThreeSunEarthMoon: React.FC<{ className?: string }> = ({ className 
       trailMat.dispose();
       sunGeo.dispose();
       sunShaderMat.dispose();
-      sunCoronaTex.dispose();
-      anamorphicTex.dispose();
-      coronaMat.dispose();
-      outerHaloMat.dispose();
-      anamorphicMat.dispose();
       starGeo.dispose();
       earthDayTex.dispose();
       earthNightTex.dispose();
