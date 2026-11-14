@@ -12,9 +12,6 @@ import {
   RefreshCw, 
   ChevronDown, 
   ChevronUp, 
-  Maximize2, 
-  Minimize2, 
-  PanelLeftClose, 
   PanelLeftOpen, 
   BarChart2, 
   Sliders, 
@@ -1474,262 +1471,13 @@ export const MissionBrowserPage: React.FC = () => {
       <section className="w-full py-6 sm:py-10 px-3 sm:px-6 lg:px-12 bg-[#08090C]">
         <div className="max-w-[1600px] w-full mx-auto flex flex-col gap-5">
 
-          {/* Mission Console Interactive Viewport Bar with Synchronized Tab Controls & Full 3D Theatre */}
-          <div className="w-full bg-[#0B0F14] border border-white/15 px-3 py-2 flex flex-wrap items-center justify-between gap-3 font-mono text-xs shadow-md">
-            
-            {/* Left: Quick Access Tool Buttons */}
-            <div className="flex flex-wrap items-center gap-2">
-              {/* Quick Tab 01: Candidate Sites */}
-              <button
-                type="button"
-                onClick={() => {
-                  if (activeSidebarTab === 'sites') {
-                    setActiveSidebarTab(null);
-                  } else {
-                    setActiveSidebarTab('sites');
-                    lastActiveTabRef.current = 'sites';
-                  }
-                }}
-                className={`flex items-center gap-2 px-3 py-1.5 border transition-all cursor-pointer font-mono text-xs uppercase tracking-wider ${
-                  activeSidebarTab === 'sites'
-                    ? 'bg-[#58D8D0]/15 border-[#58D8D0] text-[#58D8D0] shadow-[0_0_12px_rgba(88,216,208,0.25)] font-bold'
-                    : 'bg-black/90 border-white/20 text-white/70 hover:text-white hover:bg-white/10'
-                }`}
-                title="Toggle Candidate Sites Sidebar"
-              >
-                <Compass size={13} className={activeSidebarTab === 'sites' ? 'text-[#58D8D0]' : 'text-white/60'} />
-                <span>01 // CANDIDATE SITES ({candidateSites.length})</span>
-              </button>
-
-              {/* Quick Tab 02: Site Telemetry */}
-              <button
-                type="button"
-                onClick={() => {
-                  if (activeSidebarTab === 'telemetry') {
-                    setActiveSidebarTab(null);
-                  } else {
-                    setActiveSidebarTab('telemetry');
-                    lastActiveTabRef.current = 'telemetry';
-                  }
-                }}
-                className={`flex items-center gap-2 px-3 py-1.5 border transition-all cursor-pointer font-mono text-xs uppercase tracking-wider ${
-                  activeSidebarTab === 'telemetry'
-                    ? 'bg-[#ECC068]/15 border-[#ECC068] text-[#ECC068] shadow-[0_0_12px_rgba(236,192,104,0.25)] font-bold'
-                    : 'bg-black/90 border-white/20 text-white/70 hover:text-white hover:bg-white/10'
-                }`}
-                title="Toggle Site Telemetry Sidebar"
-              >
-                <BarChart2 size={13} className={activeSidebarTab === 'telemetry' ? 'text-[#ECC068]' : 'text-white/60'} />
-                <span>02 // SITE TELEMETRY (LIVE)</span>
-              </button>
-
-              {/* Dual Split View */}
-              <button
-                type="button"
-                onClick={() => {
-                  if (activeSidebarTab === 'both') {
-                    setActiveSidebarTab(null);
-                  } else {
-                    setActiveSidebarTab('both');
-                    lastActiveTabRef.current = 'both';
-                  }
-                }}
-                className={`hidden md:flex items-center gap-2 px-3 py-1.5 border transition-all cursor-pointer font-mono text-xs uppercase tracking-wider ${
-                  activeSidebarTab === 'both'
-                    ? 'bg-white/20 border-white text-white font-bold'
-                    : 'bg-black/90 border-white/20 text-white/70 hover:text-white hover:bg-white/10'
-                }`}
-                title="Toggle Split View (Both Panels)"
-              >
-                <Columns size={13} />
-                <span>DUAL SPLIT ({selectedForCompare.length})</span>
-              </button>
-
-              {/* Dedicated Compare Mission Scenarios Toggle Button */}
-              <button
-                type="button"
-                onClick={handleToggleScenarioComparison}
-                className={`flex items-center gap-2 px-3 py-1.5 border transition-all cursor-pointer font-mono text-xs uppercase tracking-wider font-bold ${
-                  showScenarioComparison
-                    ? 'bg-[#58D8D0] border-[#58D8D0] text-black shadow-[0_0_12px_rgba(88,216,208,0.3)]'
-                    : 'bg-black/90 border-[#58D8D0]/40 text-[#58D8D0] hover:bg-[#58D8D0]/10 hover:border-[#58D8D0]'
-                }`}
-                title={showScenarioComparison ? 'Hide Scenario Comparison' : 'Compare Mission Scenarios using current parameters'}
-              >
-                <Sliders size={13} />
-                <span>{showScenarioComparison ? 'HIDE COMPARISON' : 'COMPARE MISSION SCENARIOS'}</span>
-                {isComparisonStale && showScenarioComparison && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                )}
-              </button>
-            </div>
-
-            {/* Right: Full 3D Theatre / Close All Toggle */}
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  if (activeSidebarTab === null) {
-                    setActiveSidebarTab(lastActiveTabRef.current || 'sites');
-                  } else {
-                    lastActiveTabRef.current = activeSidebarTab;
-                    setActiveSidebarTab(null);
-                  }
-                }}
-                className={`flex items-center gap-2 px-4 py-1.5 border transition-all cursor-pointer font-mono text-xs uppercase tracking-widest font-bold ${
-                  activeSidebarTab === null
-                    ? 'bg-[#58D8D0] border-[#58D8D0] text-black shadow-[0_0_20px_rgba(88,216,208,0.4)]'
-                    : 'bg-white/5 hover:bg-white/15 border-white/20 text-white/90 hover:text-white'
-                }`}
-                title="Toggle full-width cinematic view for the center 3D simulator"
-              >
-                {activeSidebarTab === null ? (
-                  <>
-                    <Minimize2 size={13} />
-                    <span>RESTORE SIDEBAR</span>
-                  </>
-                ) : (
-                  <>
-                    <Maximize2 size={13} />
-                    <span>CINEMATIC FULL 3D THEATRE (CLOSE SIDEBAR)</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-
           {/* =========================================================================
-              MAIN INTERACTIVE MISSION CONSOLE: VS CODE ACTIVITY BAR + SIDEBAR + 3D VIEWPORT
+              MAIN INTERACTIVE MISSION CONSOLE: SIDEBAR + 3D VIEWPORT
           ========================================================================= */}
           <div className="flex flex-col lg:flex-row items-stretch w-full min-h-[640px] bg-[#08090C] border border-white/15 relative overflow-hidden shadow-2xl">
             
             {/* -------------------------------------------------------------------
-                VS CODE ACTIVITY BAR (FAR LEFT PERMANENT DOCKED RAIL)
-            ------------------------------------------------------------------- */}
-            <div className="w-full lg:w-[52px] shrink-0 bg-[#07090E] border-b lg:border-b-0 lg:border-r border-white/15 flex flex-row lg:flex-col items-center justify-between py-2 lg:py-3 px-2 lg:px-0 select-none z-20">
-              
-              {/* Activity Bar Top Tool Icons */}
-              <div className="flex flex-row lg:flex-col items-center gap-1.5 lg:gap-2 w-auto lg:w-full">
-                
-                {/* Tool 01: Candidate Sites */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (activeSidebarTab === 'sites') {
-                      setActiveSidebarTab(null);
-                    } else {
-                      setActiveSidebarTab('sites');
-                      lastActiveTabRef.current = 'sites';
-                    }
-                  }}
-                  className={`w-10 h-10 lg:w-full lg:h-12 flex items-center justify-center relative group transition-colors cursor-pointer ${
-                    activeSidebarTab === 'sites'
-                      ? 'text-white'
-                      : 'text-white/45 hover:text-white hover:bg-white/[0.04]'
-                  }`}
-                  title="01 // Candidate Sites (Toggle Sidebar)"
-                >
-                  {/* VS Code Active Left Accent Indicator */}
-                  {activeSidebarTab === 'sites' && (
-                    <div className="hidden lg:block absolute left-0 top-1.5 bottom-1.5 w-[3px] bg-[#58D8D0] rounded-r" />
-                  )}
-                  {activeSidebarTab === 'sites' && (
-                    <div className="lg:hidden absolute bottom-0 left-1.5 right-1.5 h-[2.5px] bg-[#58D8D0] rounded-t" />
-                  )}
-                  <div className={`p-2 rounded transition-all ${activeSidebarTab === 'sites' ? 'bg-[#58D8D0]/20 text-[#58D8D0]' : 'group-hover:text-white'}`}>
-                    <Compass size={20} className={activeSidebarTab === 'sites' ? 'text-[#58D8D0]' : 'text-white/60 group-hover:text-white'} />
-                  </div>
-                  {/* Sites Badge */}
-                  <span className="absolute top-1 right-1 lg:top-1.5 lg:right-2 px-1 text-[8px] font-mono font-bold bg-[#58D8D0]/25 text-[#58D8D0] border border-[#58D8D0]/40 rounded-full leading-none">
-                    {candidateSites.length}
-                  </span>
-                </button>
-
-                {/* Tool 02: Site Telemetry */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (activeSidebarTab === 'telemetry') {
-                      setActiveSidebarTab(null);
-                    } else {
-                      setActiveSidebarTab('telemetry');
-                      lastActiveTabRef.current = 'telemetry';
-                    }
-                  }}
-                  className={`w-10 h-10 lg:w-full lg:h-12 flex items-center justify-center relative group transition-colors cursor-pointer ${
-                    activeSidebarTab === 'telemetry'
-                      ? 'text-white'
-                      : 'text-white/45 hover:text-white hover:bg-white/[0.04]'
-                  }`}
-                  title="02 // Site Telemetry & SPICE Metrics (Toggle Sidebar)"
-                >
-                  {/* VS Code Active Left Accent Indicator */}
-                  {activeSidebarTab === 'telemetry' && (
-                    <div className="hidden lg:block absolute left-0 top-1.5 bottom-1.5 w-[3px] bg-[#ECC068] rounded-r" />
-                  )}
-                  {activeSidebarTab === 'telemetry' && (
-                    <div className="lg:hidden absolute bottom-0 left-1.5 right-1.5 h-[2.5px] bg-[#ECC068] rounded-t" />
-                  )}
-                  <div className={`p-2 rounded transition-all ${activeSidebarTab === 'telemetry' ? 'bg-[#ECC068]/20 text-[#ECC068]' : 'group-hover:text-white'}`}>
-                    <BarChart2 size={20} className={activeSidebarTab === 'telemetry' ? 'text-[#ECC068]' : 'text-white/60 group-hover:text-white'} />
-                  </div>
-                  {/* Live Pulse Dot */}
-                  <span className="absolute top-1.5 right-1.5 lg:top-2 lg:right-2.5 w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_6px_rgba(52,211,153,0.8)]" />
-                </button>
-
-                {/* Tool 03: Dual Split View (Both Sites & Telemetry) */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (activeSidebarTab === 'both') {
-                      setActiveSidebarTab(null);
-                    } else {
-                      setActiveSidebarTab('both');
-                      lastActiveTabRef.current = 'both';
-                    }
-                  }}
-                  className={`w-10 h-10 lg:w-full lg:h-12 flex items-center justify-center relative group transition-colors cursor-pointer ${
-                    activeSidebarTab === 'both'
-                      ? 'text-white'
-                      : 'text-white/45 hover:text-white hover:bg-white/[0.04]'
-                  }`}
-                  title="Dual Split View (Both Candidate Sites & Telemetry)"
-                >
-                  {activeSidebarTab === 'both' && (
-                    <div className="hidden lg:block absolute left-0 top-1.5 bottom-1.5 w-[3px] bg-white rounded-r" />
-                  )}
-                  {activeSidebarTab === 'both' && (
-                    <div className="lg:hidden absolute bottom-0 left-1.5 right-1.5 h-[2.5px] bg-white rounded-t" />
-                  )}
-                  <div className={`p-2 rounded transition-all ${activeSidebarTab === 'both' ? 'bg-white/20 text-white' : 'group-hover:text-white'}`}>
-                    <Columns size={18} className={activeSidebarTab === 'both' ? 'text-white' : 'text-white/60 group-hover:text-white'} />
-                  </div>
-                </button>
-
-              </div>
-
-              {/* Activity Bar Bottom Controls: Collapse / Expand */}
-              <div className="flex flex-row lg:flex-col items-center gap-2 pb-0 lg:pb-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (activeSidebarTab) {
-                      lastActiveTabRef.current = activeSidebarTab;
-                      setActiveSidebarTab(null);
-                    } else {
-                      setActiveSidebarTab(lastActiveTabRef.current || 'sites');
-                    }
-                  }}
-                  className="w-8 h-8 lg:w-9 lg:h-9 flex items-center justify-center text-white/45 hover:text-white hover:bg-white/10 rounded transition-colors cursor-pointer"
-                  title={activeSidebarTab ? 'Collapse Sidebar (Esc / Close)' : 'Expand Sidebar'}
-                >
-                  {activeSidebarTab ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
-                </button>
-              </div>
-            </div>
-
-            {/* -------------------------------------------------------------------
-                VS CODE SIDEBAR DRAWER (SMOOTH SLIDING APERTURE)
+                SIDEBAR DRAWER (SMOOTH SLIDING APERTURE)
             ------------------------------------------------------------------- */}
             <div
               className={`transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] shrink-0 overflow-hidden flex flex-col bg-[#08090C] border-b lg:border-b-0 lg:border-r border-white/15 relative z-10 ${
@@ -1899,6 +1647,17 @@ export const MissionBrowserPage: React.FC = () => {
               {/* Unified 3D System Header Bar & Dual Mode Viewport Switcher */}
               <div className="flex flex-wrap items-center justify-between gap-2 mb-2 pb-1.5 border-b border-white/10 px-1">
                 <div className="flex flex-wrap items-center gap-1.5 font-mono text-[9.5px]">
+                  {activeSidebarTab === null && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveSidebarTab(lastActiveTabRef.current || 'sites')}
+                      className="px-2.5 py-1 bg-white/10 hover:bg-[#58D8D0] hover:text-black border border-white/20 text-[#58D8D0] font-mono text-[9.5px] uppercase font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                      title="Restore Sidebar"
+                    >
+                      <PanelLeftOpen size={11} />
+                      <span>SHOW SIDEBAR</span>
+                    </button>
+                  )}
                   <div className="flex items-center border border-white/20 bg-black p-0.5">
                     <button
                       type="button"
