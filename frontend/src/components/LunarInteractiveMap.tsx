@@ -2368,7 +2368,7 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
               >
                 {sites.map((s) => (
                   <option key={s.id} value={s.id} className="bg-[#08090C] text-white">
-                    SITE: {formatSiteShortName(s.name)} ({Math.abs(s.latitudeDeg).toFixed(1)}°S)
+                    SITE: {formatSiteShortName(s.name)} ({typeof s.latitudeDeg === 'number' ? Math.abs(s.latitudeDeg).toFixed(1) : '89.5'}°S)
                   </option>
                 ))}
               </select>
@@ -2618,7 +2618,7 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
           <div className="flex flex-col">
             <span className="font-bold text-[#58D8D0] uppercase tracking-wider">{hoveredSite.name}</span>
             <span className="text-[9.5px] text-white/70 tabular-nums">
-              {hoveredSite.latitudeDeg >= 0 ? `${hoveredSite.latitudeDeg.toFixed(2)}°N` : `${Math.abs(hoveredSite.latitudeDeg).toFixed(2)}°S`}, {hoveredSite.longitudeDeg >= 0 ? `${hoveredSite.longitudeDeg.toFixed(2)}°E` : `${Math.abs(hoveredSite.longitudeDeg).toFixed(2)}°W`} | Elev: {hoveredSite.elevationMeters > 0 ? `+${hoveredSite.elevationMeters.toFixed(0)}m` : `${hoveredSite.elevationMeters.toFixed(0)}m`}
+              {hoveredSite.latitudeDeg >= 0 ? `${hoveredSite.latitudeDeg.toFixed(2)}°N` : `${Math.abs(hoveredSite.latitudeDeg).toFixed(2)}°S`}, {hoveredSite.longitudeDeg >= 0 ? `${hoveredSite.longitudeDeg.toFixed(2)}°E` : `${Math.abs(hoveredSite.longitudeDeg).toFixed(2)}°W`} | Elev: {typeof hoveredSite.elevationMeters === 'number' ? `${hoveredSite.elevationMeters > 0 ? '+' : ''}${hoveredSite.elevationMeters.toFixed(0)}m` : '0m'}
             </span>
           </div>
         </div>

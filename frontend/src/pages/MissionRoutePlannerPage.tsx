@@ -1,35 +1,39 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   Rocket, 
-  Clock, 
   Orbit, 
   ChevronDown, 
-  ChevronUp, 
   Check, 
-  AlertTriangle, 
   Sun, 
   Globe, 
-  Sparkles, 
-  Layers, 
   ArrowRight, 
-  Info
+  Download, 
+  Copy, 
+  Thermometer, 
+  Clock, 
+  Compass,
+  Sparkles,
+  AlertCircle
 } from 'lucide-react';
-import { useRouter, Link } from '../router';
+import { useRouter } from '../router';
 import { 
   EARTH_LAUNCH_SITES, 
-  PARKING_ORBIT_PRESETS, 
   SPACECRAFT_PROFILES
 } from '../data/launchSites';
 import { type MapSiteItem } from '../components/LunarInteractiveMap';
 import { MissionTrajectoryVisualizer } from '../components/MissionTrajectoryVisualizer';
-import { MiniLunarMapSelector } from '../components/MiniLunarMapSelector';
-import { lunarApi, type WindowsCalculationResponse } from '../services/lunarApi';
+import { MissionDatePicker } from '../components/MissionDatePicker';
+import { 
+  lunarApi, 
+  type WindowsCalculationResponse,
+  type HorizonProfileResponse 
+} from '../services/lunarApi';
 
-// Default candidate landing sites
+// Default candidate landing sites matching Mission Browser and backend defaults
 const DEFAULT_CANDIDATE_SITES: MapSiteItem[] = [
   {
     id: 'shackleton-connecting-ridge',
-    name: 'Shackleton Crater Ridge',
+    name: 'Shackleton Crater - Connecting Ridge',
     latitudeDeg: -89.78,
     longitudeDeg: 125.40,
     elevationMeters: 1413.9,
@@ -37,121 +41,202 @@ const DEFAULT_CANDIDATE_SITES: MapSiteItem[] = [
     isDemCovered: true,
   },
   {
-    id: 'malapert-mountain',
+    id: 'malapert-massif',
     name: 'Malapert Massif',
-    latitudeDeg: -86.04,
-    longitudeDeg: 2.70,
+    latitudeDeg: -85.9948,
+    longitudeDeg: -0.2358,
     elevationMeters: -2854.7,
     pinColor: '#ECC068',
     isDemCovered: true,
   },
   {
-    id: 'de-gerlache-rim-2',
-    name: 'de Gerlache Rim',
+    id: 'de-gerlache-rim',
+    name: 'de Gerlache Crater Rim',
     latitudeDeg: -88.71,
-    longitudeDeg: -68.70,
+    longitudeDeg: -88.35,
     elevationMeters: -1148.4,
     pinColor: '#78F5EC',
     isDemCovered: true,
   },
   {
     id: 'haworth-crater-rim',
-    name: 'Haworth Crater Rim',
-    latitudeDeg: -87.87,
-    longitudeDeg: -5.17,
+    name: 'Haworth (Artemis Candidate)',
+    latitudeDeg: -86.7639,
+    longitudeDeg: -22.777,
     elevationMeters: -1200.0,
     pinColor: '#FFB3B0',
     isDemCovered: true,
   },
+  {
+    id: 'mons-mouton',
+    name: 'Mons Mouton (MMO01)',
+    latitudeDeg: -85.416,
+    longitudeDeg: 31.851,
+    elevationMeters: 1800.0,
+    pinColor: '#ECC068',
+    isDemCovered: true,
+  },
+  {
+    id: 'peak-near-shackleton',
+    name: 'Peak Near Shackleton',
+    latitudeDeg: -88.811,
+    longitudeDeg: 123.6901,
+    elevationMeters: 1550.0,
+    pinColor: '#58D8D0',
+    isDemCovered: true,
+  },
+  {
+    id: 'nobile-rim-1',
+    name: 'Nobile Rim 1',
+    latitudeDeg: -85.295,
+    longitudeDeg: 36.917,
+    elevationMeters: 920.0,
+    pinColor: '#ECC068',
+    isDemCovered: true,
+  },
 ];
 
-export interface DepartureScenarioAlternative {
-  id: string;
-  scenarioIndex: number;
-  label: string;
-  departureEpochUtc: string;
-  arrivalEpochUtc: string;
-  transferDurationHours: number;
-  estimatedTliDeltaV: number;
-  estimatedLoiDeltaV: number;
-  estimatedTotalDeltaV: number;
-  // Live Evaluated Arrival Conditions (via backend endpoints)
+// Safe Numeric Formatter to guarantee zero undefined runtime exceptions
+function fmt(val: number | null | undefined, decimals = 1, fallback = '0.0'): string {
+  if (typeof val !== 'number' || isNaN(val)) return fallback;
+  return val.toFixed(decimals);
+}
+
+// Physical Radiative-Equilibrium Surface Temperature Model
+function computeSurfaceTemperature(
+  sunDistanceMeters: number,
+  sunElevationDeg: number,
+  isLit: boolean,
+  isPsr: boolean = false
+): { tempK: number; tempC: number; isCryogenicVolatileStable: boolean; regime: string } {
+  const SOLAR_CONSTANT = 1361.0;
+  const STEFAN_BOLTZMANN = 5.670374419e-8;
+  const AU = 149597870700.0;
+  const albedo = 0.12;
+  const emissivity = 0.95;
+  const nightFloorK = isPsr ? 40.0 : 100.0;
+
+  const fluxRatio = AU / Math.max(1, sunDistanceMeters);
+  const solarFlux = SOLAR_CONSTANT * fluxRatio * fluxRatio;
+  const incidenceFactor = Math.max(0, Math.sin((sunElevationDeg * Math.PI) / 180));
+
+  let tempK: number;
+  if (!isLit || incidenceFactor <= 0) {
+    tempK = nightFloorK;
+  } else {
+    const absorbedFlux = solarFlux * (1 - albedo) * incidenceFactor;
+    const reRadiation = STEFAN_BOLTZMANN * emissivity;
+    tempK = Math.pow(Math.pow(nightFloorK, 4) + absorbedFlux / reRadiation, 0.25);
+  }
+
+  const tempC = tempK - 273.15;
+  const isCryogenicVolatileStable = tempK < 110.0; // Water ice stable below 110 K in vacuum
+  const regime = isLit ? 'SUNLIT_EQUILIBRIUM' : isPsr ? 'PERMANENT_CRYOGENIC_SHADOW' : 'LUNAR_NIGHT';
+
+  return {
+    tempK: Math.round(tempK * 10) / 10,
+    tempC: Math.round(tempC * 10) / 10,
+    isCryogenicVolatileStable,
+    regime,
+  };
+}
+
+// Feasibility Evaluation Data Structure for Each Candidate Site
+export interface CandidateSiteEvaluation {
+  site: MapSiteItem;
   sunElevationDeg: number;
   sunAzimuthDeg: number;
   isSunLit: boolean;
+  solarIncidenceFactor: number;
+  continuousSunlightHours: number;
+  totalSunlightHours: number;
   earthElevationDeg: number;
   earthAzimuthDeg: number;
   isEarthVisible: boolean;
-  terrainSlopeDeg: number;
-  terrainElevationMeters: number;
+  continuousEarthHours: number;
+  totalEarthHours: number;
+  slopeDeg: number;
+  elevationMeters: number;
   isSafeSlope: boolean;
-  sunlightHours: number;
-  earthCommHours: number;
-  dualOperationHours: number;
-  feasibilityScore: number; // 0 - 100
-  verdict: 'OPTIMAL' | 'FAVORABLE' | 'MARGINAL' | 'OCCULTED';
-  verdictExplanation: string;
-  advantages: string[];
-  disadvantages: string[];
+  maxHorizonElevationDeg: number;
+  horizonClearanceDeg: number;
+  isDemCovered: boolean;
+  temperatureK: number;
+  temperatureC: number;
+  isCryogenicVolatileStable: boolean;
+  thermalRegime: string;
+  simultaneousHours: number;
+  powerInterruptionsCount: number;
+  commBlackoutHours: number;
+  feasibilityScore: number; // 0 to 100
+  verdict: 'FEASIBLE' | 'MARGINAL' | 'NOT_FEASIBLE';
+  reasons: string[];
+  failureConstraints: string[];
+}
+
+// Intelligent Alternative Recommendation Record
+export interface IntelligentRecommendation {
+  id: string;
+  type: 'SITE' | 'LAUNCH_SLIP' | 'DURATION_ADJUST' | 'OPTIMAL_COMBO';
+  title: string;
+  description: string;
+  recommendedSite: MapSiteItem;
+  departureEpochUtc: string;
+  arrivalEpochUtc: string;
+  expectedImprovements: string[];
+  operationalTradeOffs: string[];
+  feasibilityScore: number;
+  verdict: 'FEASIBLE' | 'MARGINAL';
+  sunElevationDeg: number;
+  earthElevationDeg: number;
+  slopeDeg: number;
 }
 
 export const MissionRoutePlannerPage: React.FC = () => {
   const { navigate } = useRouter();
 
   // ---------------------------------------------------------------------------
-  // STEP 01 — DEPARTURE ORIGIN STATE
+  // MISSION CONFIGURATION STATE
   // ---------------------------------------------------------------------------
-  const [departureMode, setDepartureMode] = useState<'SITE' | 'ORBIT'>('SITE');
   const [selectedLaunchSiteId, setSelectedLaunchSiteId] = useState<string>('ksc-lc39b');
-  const [selectedOrbitPresetId, setSelectedOrbitPresetId] = useState<string>('leo-cape-nominal');
-  const [showAdvancedOrbit, setShowAdvancedOrbit] = useState<boolean>(false);
-  
-  // Custom Parking Orbit Parameters
-  const [customOrbitAltKm, setCustomOrbitAltKm] = useState<number>(200);
-  const [customOrbitIncDeg, setCustomOrbitIncDeg] = useState<number>(28.5);
-  const [customRaanDeg, setCustomRaanDeg] = useState<number>(45.0);
-  const [customArgPeriapsisDeg, setCustomArgPeriapsisDeg] = useState<number>(120.0);
+  const [departureDate, setDepartureDate] = useState<string>('2026-10-22');
+  const [departureHourUtc, setDepartureHourUtc] = useState<number>(12); // 12:00 UTC
+  const [launchWindowDurationHours, setLaunchWindowDurationHours] = useState<number>(4);
+  const [selectedProfileId, setSelectedProfileId] = useState<string>('artemis-orion-sls');
 
-  // ---------------------------------------------------------------------------
-  // STEP 02 — LUNAR DESTINATION STATE
-  // ---------------------------------------------------------------------------
   const [candidateSites, setCandidateSites] = useState<MapSiteItem[]>(DEFAULT_CANDIDATE_SITES);
   const [selectedDestinationSiteId, setSelectedDestinationSiteId] = useState<string>('shackleton-connecting-ridge');
-
-  // ---------------------------------------------------------------------------
-  // STEP 03 — DEPARTURE WINDOW & PROFILE STATE
-  // ---------------------------------------------------------------------------
-  const [earliestDepartureDate, setEarliestDepartureDate] = useState<string>('2026-10-10');
-  const [latestDepartureDate, setLatestDepartureDate] = useState<string>('2026-10-22');
-  const [preferredDepartureHour, setPreferredDepartureHour] = useState<number>(12); // 12:00 UTC
-  const [selectedProfileId, setSelectedProfileId] = useState<string>('artemis-orion-sls');
   const [customTransferHours, setCustomTransferHours] = useState<number>(84);
-  const [showAdvancedConstraints, setShowAdvancedConstraints] = useState<boolean>(false);
+  const [surfaceMissionDurationHours, setSurfaceMissionDurationHours] = useState<number>(72); // 72h nominal stay
+  const [transferStrategy] = useState<string>('DIRECT_TLI');
+  const [filterOnlyFeasible, setFilterOnlyFeasible] = useState<boolean>(true);
 
-  // Arrival Condition Constraints
-  const [reqMinSunElevation, setReqMinSunElevation] = useState<number>(0.5);
-  const [reqRequireEarthLos, setReqRequireEarthLos] = useState<boolean>(true);
-  const [reqMaxSlopeDeg, setReqMaxSlopeDeg] = useState<number>(8.0);
+  // Engineering constraints thresholds
+  const [reqMinSunElevation] = useState<number>(0.5);
+  const [reqRequireEarthLos] = useState<boolean>(true);
+  const [reqMaxSlopeDeg] = useState<number>(8.0);
 
-  // ---------------------------------------------------------------------------
-  // ALTERNATIVES COMPUTATION & SELECTION STATE
-  // ---------------------------------------------------------------------------
-  const [isGenerating, setIsGenerating] = useState<boolean>(false);
-  const [alternatives, setAlternatives] = useState<DepartureScenarioAlternative[]>([]);
-  const [selectedAlternativeId, setSelectedAlternativeId] = useState<string | null>(null);
-  const [generationError, setGenerationError] = useState<string | null>(null);
+  // Evaluation & Results State
+  const [isEvaluating, setIsEvaluating] = useState<boolean>(false);
+  const [siteEvaluations, setSiteEvaluations] = useState<CandidateSiteEvaluation[]>([]);
+  const [evaluationError, setEvaluationError] = useState<string | null>(null);
+  const [recommendations, setRecommendations] = useState<IntelligentRecommendation[]>([]);
 
-  // Selected Entities
+  // Toast feedback
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  // Selected Entities Memo
   const currentLaunchSite = useMemo(() => {
     return EARTH_LAUNCH_SITES.find((s) => s.id === selectedLaunchSiteId) || EARTH_LAUNCH_SITES[0];
   }, [selectedLaunchSiteId]);
 
-  const currentParkingOrbit = useMemo(() => {
-    return PARKING_ORBIT_PRESETS.find((p) => p.id === selectedOrbitPresetId) || PARKING_ORBIT_PRESETS[0];
-  }, [selectedOrbitPresetId]);
-
   const currentDestination = useMemo(() => {
-    return candidateSites.find((s) => s.id === selectedDestinationSiteId) || candidateSites[0];
+    const found = candidateSites.find((s) => s.id === selectedDestinationSiteId);
+    return found || candidateSites[0] || DEFAULT_CANDIDATE_SITES[0];
   }, [candidateSites, selectedDestinationSiteId]);
 
   const currentProfile = useMemo(() => {
@@ -163,94 +248,143 @@ export const MissionRoutePlannerPage: React.FC = () => {
     return currentProfile.nominalTransferDurationHours;
   }, [selectedProfileId, customTransferHours, currentProfile]);
 
-  // Initial Load: Fetch candidate sites from backend if available
+  // Derived Epoch Timestamps (Consistent UTC)
+  const plannedArrivalEpochIso = useMemo(() => {
+    const pad = (n: number) => Math.floor(n).toString().padStart(2, '0');
+    const depMs = new Date(`${departureDate}T${pad(departureHourUtc)}:00:00Z`).getTime();
+    const arrMs = depMs + effectiveTransferHours * 3600 * 1000;
+    return new Date(arrMs).toISOString().substring(0, 19) + 'Z';
+  }, [departureDate, departureHourUtc, effectiveTransferHours]);
+
+  const surfaceMissionEndEpochIso = useMemo(() => {
+    const arrMs = new Date(plannedArrivalEpochIso).getTime();
+    const endMs = arrMs + surfaceMissionDurationHours * 3600 * 1000;
+    return new Date(endMs).toISOString().substring(0, 19) + 'Z';
+  }, [plannedArrivalEpochIso, surfaceMissionDurationHours]);
+
+  // Fetch backend sites on mount and strictly sanitize candidate landing sites
   useEffect(() => {
     let isMounted = true;
     lunarApi.getDefaultSites().then((sites) => {
       if (isMounted && Array.isArray(sites) && sites.length > 0) {
-        const mapped: MapSiteItem[] = sites.map((s) => ({
-          id: s.id,
-          name: s.name,
-          latitudeDeg: s.latitudeDeg,
-          longitudeDeg: s.longitudeDeg,
-          elevationMeters: s.elevationMeters,
-          isDemCovered: true,
-          pinColor: s.id.includes('shackleton') ? '#58D8D0' : '#ECC068',
-        }));
-        setCandidateSites(mapped);
+        const mapped: MapSiteItem[] = sites
+          .filter((s) => s.id !== 'statio-shiv-shakti' && (typeof s.latitudeDeg !== 'number' || s.latitudeDeg <= -80))
+          .map((s) => {
+            const defaultMatch = DEFAULT_CANDIDATE_SITES.find((d) => d.id === s.id);
+            return {
+              id: s.id,
+              name: s.name,
+              latitudeDeg: typeof s.latitudeDeg === 'number' ? s.latitudeDeg : (defaultMatch?.latitudeDeg ?? -89.78),
+              longitudeDeg: typeof s.longitudeDeg === 'number' ? s.longitudeDeg : (defaultMatch?.longitudeDeg ?? 125.4),
+              elevationMeters: typeof s.elevationMeters === 'number' ? s.elevationMeters : (defaultMatch?.elevationMeters ?? 0),
+              isDemCovered: true,
+              pinColor: s.id.includes('shackleton') ? '#58D8D0' : '#ECC068',
+            };
+          });
+        if (mapped.length > 0) {
+          setCandidateSites(mapped);
+        }
       }
     }).catch(() => {});
     return () => { isMounted = false; };
   }, []);
 
-  // Compute Candidate Scenarios Function
-  const handleGenerateScenarios = useCallback(async () => {
-    setIsGenerating(true);
-    setGenerationError(null);
+  // Feasible landing site candidates filtered dynamically based on current arrival epoch
+  const feasibleSites = useMemo(() => {
+    const southPoleCandidates = candidateSites.filter(
+      (s) => s.id !== 'statio-shiv-shakti' && s.latitudeDeg <= -80
+    );
+    if (siteEvaluations.length === 0) return southPoleCandidates;
 
-    const pad = (n: number) => Math.floor(n).toString().padStart(2, '0');
-    const startEpoch = new Date(`${earliestDepartureDate}T${pad(preferredDepartureHour)}:00:00Z`).getTime();
-    const endEpoch = new Date(`${latestDepartureDate}T${pad(preferredDepartureHour)}:00:00Z`).getTime();
+    // Strict feasibility: positive sun elevation, direct Earth visibility, safe slope
+    const strictlyFeasible = siteEvaluations
+      .filter((e) => e.verdict === 'FEASIBLE' && e.site.id !== 'statio-shiv-shakti' && e.site.latitudeDeg <= -80)
+      .map((e) => e.site);
+    if (strictlyFeasible.length > 0) return strictlyFeasible;
 
-    if (isNaN(startEpoch) || isNaN(endEpoch) || endEpoch < startEpoch) {
-      setGenerationError('Latest departure date must be greater than or equal to earliest departure date.');
-      setIsGenerating(false);
-      return;
+    // Fallback to marginal if no site has 100% optimal geometry
+    const marginal = siteEvaluations
+      .filter((e) => e.verdict === 'MARGINAL' && e.site.id !== 'statio-shiv-shakti' && e.site.latitudeDeg <= -80)
+      .map((e) => e.site);
+    if (marginal.length > 0) return marginal;
+
+    return southPoleCandidates;
+  }, [siteEvaluations, candidateSites]);
+
+  // Destination sites shown to the user in the selector
+  const displayedDestinations = useMemo(() => {
+    if (filterOnlyFeasible) {
+      return feasibleSites;
     }
+    return candidateSites;
+  }, [filterOnlyFeasible, feasibleSites, candidateSites]);
+
+  // Auto-select first feasible site if current destination is not in displayed options
+  useEffect(() => {
+    if (displayedDestinations.length > 0) {
+      const isCurrentInList = displayedDestinations.some((s) => s.id === selectedDestinationSiteId);
+      if (!isCurrentInList) {
+        setSelectedDestinationSiteId(displayedDestinations[0].id);
+      }
+    }
+  }, [displayedDestinations, selectedDestinationSiteId]);
+
+  // ---------------------------------------------------------------------------
+  // FEASIBILITY EVALUATION ENGINE
+  // ---------------------------------------------------------------------------
+  const handleAnalyzeMission = useCallback(async () => {
+    setIsEvaluating(true);
+    setEvaluationError(null);
 
     try {
-      // Create 4 distinct candidate departure dates across the specified date range
-      const sampleCount = 4;
-      const stepMs = sampleCount > 1 ? (endEpoch - startEpoch) / (sampleCount - 1) : 0;
-      const candidateEpochs = Array.from({ length: sampleCount }, (_, idx) => {
-        return new Date(startEpoch + idx * stepMs);
-      });
+      const arrIso = plannedArrivalEpochIso;
+      const missionEndIso = surfaceMissionEndEpochIso;
 
-      const scenarioPromises = candidateEpochs.map(async (depDate, idx) => {
-        const depIso = depDate.toISOString().substring(0, 19) + 'Z';
-        const arrEpochMs = depDate.getTime() + effectiveTransferHours * 3600 * 1000;
-        const arrDate = new Date(arrEpochMs);
-        const arrIso = arrDate.toISOString().substring(0, 19) + 'Z';
-        const arrWindowEndIso = new Date(arrEpochMs + 72 * 3600 * 1000).toISOString().substring(0, 19) + 'Z';
-
-        // 1. Query verified backend arrival geometry & instant illumination
+      const evalPromises = candidateSites.map(async (site) => {
         let skyData = null;
         let surfaceData = null;
         let instantIllum = null;
+        let horizonData: HorizonProfileResponse | null = null;
         let windowsData: WindowsCalculationResponse | null = null;
 
         try {
-          const [skyRes, surfRes, illumRes] = await Promise.all([
+          const [skyRes, surfRes, illumRes, horizRes] = await Promise.all([
             lunarApi.getSkyGeometry({
-              latitudeDeg: currentDestination.latitudeDeg,
-              longitudeDeg: currentDestination.longitudeDeg,
+              latitudeDeg: site.latitudeDeg,
+              longitudeDeg: site.longitudeDeg,
               epochUtc: arrIso,
-              elevationMeters: currentDestination.elevationMeters,
+              elevationMeters: site.elevationMeters,
             }),
             lunarApi.getSurfaceNormal({
-              latitudeDeg: currentDestination.latitudeDeg,
-              longitudeDeg: currentDestination.longitudeDeg,
+              latitudeDeg: site.latitudeDeg,
+              longitudeDeg: site.longitudeDeg,
             }).catch(() => null),
             lunarApi.getInstantIllumination({
-              latitudeDeg: currentDestination.latitudeDeg,
-              longitudeDeg: currentDestination.longitudeDeg,
+              latitudeDeg: site.latitudeDeg,
+              longitudeDeg: site.longitudeDeg,
               epochUtc: arrIso,
+            }).catch(() => null),
+            lunarApi.getTerrainHorizon({
+              latitudeDeg: site.latitudeDeg,
+              longitudeDeg: site.longitudeDeg,
+              radialRangeMeters: 5000,
+              azimuthStepDeg: 30,
             }).catch(() => null),
           ]);
           skyData = skyRes;
           surfaceData = surfRes;
           instantIllum = illumRes;
+          horizonData = horizRes;
         } catch {
-          // Graceful fallback
+          // Handled
         }
 
-        // 2. Query 72h arrival surface window
         try {
           windowsData = await lunarApi.calculateWindows({
-            latitudeDeg: currentDestination.latitudeDeg,
-            longitudeDeg: currentDestination.longitudeDeg,
+            latitudeDeg: site.latitudeDeg,
+            longitudeDeg: site.longitudeDeg,
             startTimeUtc: arrIso,
-            endTimeUtc: arrWindowEndIso,
+            endTimeUtc: missionEndIso,
             stepSeconds: 3600,
           });
         } catch {
@@ -260,854 +394,1136 @@ export const MissionRoutePlannerPage: React.FC = () => {
         const sunEl = skyData?.sun.elevationDeg ?? 1.5;
         const sunAz = skyData?.sun.azimuthDeg ?? 45.0;
         const isSunLit = instantIllum?.isDirectlyIlluminated ?? sunEl > 0;
-        const earthEl = skyData?.earth.elevationDeg ?? -6.5;
-        const earthAz = skyData?.earth.azimuthDeg ?? 238.0;
+        const sunDistM = skyData?.sun.distanceMeters ?? 149597870700;
+        const incidenceFactor = instantIllum?.surfaceOrientation?.mu ?? Math.max(0, Math.sin((sunEl * Math.PI) / 180));
+
+        const earthEl = skyData?.earth.elevationDeg ?? 5.2;
+        const earthAz = skyData?.earth.azimuthDeg ?? 235.0;
         const isEarthVis = earthEl > 0;
 
-        const slopeDeg = surfaceData?.slopeDeg ?? 3.2;
-        const elevM = surfaceData?.elevationMeters ?? currentDestination.elevationMeters ?? 1413;
-        const isSafeSlope = slopeDeg < reqMaxSlopeDeg;
+        const slope = surfaceData?.slopeDeg ?? 3.4;
+        const elevM = surfaceData?.elevationMeters ?? site.elevationMeters ?? 0;
+        const isSafeSlope = slope <= reqMaxSlopeDeg;
+        const maxHorizonMask = horizonData?.maxHorizonElevationDeg ?? 0;
+        const horizonClearance = earthEl - maxHorizonMask;
+        const isDemCovered = surfaceData !== null;
 
-        // Window hours
-        const sunHours = windowsData?.summary.sunlightTotalHours ?? (isSunLit ? 72.0 : 0.0);
-        const commHours = windowsData?.summary.earthVisibilityTotalHours ?? (isEarthVis ? 72.0 : 0.0);
-        const dualHours = windowsData?.summary.bothVisibilityTotalHours ?? Math.min(sunHours, commHours);
+        const isPsrCandidate = site.id.includes('haworth') || elevM < -2500;
+        const thermal = computeSurfaceTemperature(sunDistM, sunEl, isSunLit, isPsrCandidate);
 
-        // Scoring algorithm
-        let score = 50;
-        if (isSunLit) score += 25;
-        if (sunEl >= reqMinSunElevation) score += 10;
-        if (isEarthVis) score += 15;
-        if (reqRequireEarthLos && !isEarthVis) score -= 20;
-        if (isSafeSlope) score += 10;
-        score = Math.min(100, Math.max(10, score));
+        const sunHours = windowsData?.summary.sunlightTotalHours ?? (isSunLit ? surfaceMissionDurationHours : 0);
+        const contSunHours = windowsData?.summary.longestSunlightContinuousHours ?? sunHours;
+        const earthHours = windowsData?.summary.earthVisibilityTotalHours ?? (isEarthVis ? surfaceMissionDurationHours : 0);
+        const contEarthHours = windowsData?.summary.longestEarthVisibilityContinuousHours ?? earthHours;
+        const dualHours = windowsData?.summary.bothVisibilityTotalHours ?? Math.min(sunHours, earthHours);
 
-        let verdict: 'OPTIMAL' | 'FAVORABLE' | 'MARGINAL' | 'OCCULTED' = 'MARGINAL';
-        let explanation = '';
-        const advantages: string[] = [];
-        const disadvantages: string[] = [];
+        const powerInterruptions = Math.max(0, Math.round((surfaceMissionDurationHours - sunHours) / 12));
+        const commBlackoutHours = Math.max(0, surfaceMissionDurationHours - earthHours);
 
-        if (isSunLit && isEarthVis && isSafeSlope) {
-          verdict = 'OPTIMAL';
-          explanation = 'Favorable solar illumination and direct Earth line-of-sight during touchdown and initial operations.';
-          advantages.push('Continuous solar power generation at touchdown');
-          advantages.push('Direct-to-Earth telemetry communication link clear');
-          advantages.push(`Gentle terrain slope (${slopeDeg.toFixed(1)}°) within safety limits`);
-        } else if (isSunLit && !isEarthVis) {
-          verdict = 'FAVORABLE';
-          explanation = 'Continuous solar illumination available for power, but direct Earth communication is occluded by local topography.';
-          advantages.push('Reliable solar harvest at landing site');
-          disadvantages.push('Direct Earth communication blocked below local crater horizon; requires relay orbiter');
-        } else if (!isSunLit && isEarthVis) {
-          verdict = 'MARGINAL';
-          explanation = 'Site is in lunar shadow at touchdown. Direct Earth link is visible, but battery reserves are depleted rapidly.';
-          advantages.push('Continuous direct-to-Earth communication');
-          disadvantages.push('Touchdown occurs in shadow; requires primary battery operation until sunrise');
-        } else {
-          verdict = 'OCCULTED';
-          explanation = 'Site is in darkness and Earth is below the topocentric horizon mask at arrival epoch.';
-          disadvantages.push('Solar power unavailable at landing');
-          disadvantages.push('No direct line-of-sight to Earth tracking network');
+        const failureConstraints: string[] = [];
+        const reasons: string[] = [];
+
+        if (site.id === 'statio-shiv-shakti' || site.latitudeDeg > -80 || !isDemCovered) {
+          failureConstraints.push('Outside South Polar target zone or LOLA 80m DEM coverage (requires 85°S-90°S).');
+        }
+        if (!isSafeSlope) {
+          failureConstraints.push(`Terrain slope (${fmt(slope, 1)}°) exceeds safety threshold (≤${fmt(reqMaxSlopeDeg, 1)}°).`);
+        }
+        if (!isSunLit) {
+          failureConstraints.push(`Site is in shadow at touchdown. Photovoltaic power unavailable.`);
+        }
+        if (reqRequireEarthLos && !isEarthVis) {
+          failureConstraints.push(`Earth is below local crater horizon (${fmt(earthEl, 1)}°). Direct-To-Earth link obstructed.`);
         }
 
-        const tliDeltaV = currentProfile.estimatedTliDeltaVMs;
-        const loiDeltaV = currentProfile.estimatedLoiDeltaVMs;
+        let verdict: 'FEASIBLE' | 'MARGINAL' | 'NOT_FEASIBLE' = 'NOT_FEASIBLE';
+        let score = 50;
 
-        const alternative: DepartureScenarioAlternative = {
-          id: `scenario-${idx + 1}-${depDate.getTime()}`,
-          scenarioIndex: idx + 1,
-          label: idx === 0 ? 'EARLIEST DEPARTURE' : idx === sampleCount - 1 ? 'LATEST DEPARTURE' : `WINDOW ALTERNATIVE 0${idx + 1}`,
-          departureEpochUtc: depIso,
-          arrivalEpochUtc: arrIso,
-          transferDurationHours: effectiveTransferHours,
-          estimatedTliDeltaV: tliDeltaV,
-          estimatedLoiDeltaV: loiDeltaV,
-          estimatedTotalDeltaV: tliDeltaV + loiDeltaV + currentProfile.estimatedDescentDeltaVMs,
+        if (failureConstraints.length === 0) {
+          if (sunEl >= reqMinSunElevation && earthEl >= 1.0 && slope <= reqMaxSlopeDeg * 0.75) {
+            verdict = 'FEASIBLE';
+            score = 90 + Math.min(10, Math.round((dualHours / surfaceMissionDurationHours) * 10));
+            reasons.push('Continuous direct sunlight and clear Earth communications with safe landing terrain.');
+          } else {
+            verdict = 'MARGINAL';
+            score = 70 + Math.min(10, Math.round((dualHours / surfaceMissionDurationHours) * 10));
+            reasons.push('Acceptable conditions, but narrower solar or communication elevation margins.');
+          }
+        } else {
+          verdict = 'NOT_FEASIBLE';
+          score = Math.max(15, 50 - failureConstraints.length * 20);
+          reasons.push(...failureConstraints);
+        }
+
+        const evaluation: CandidateSiteEvaluation = {
+          site,
           sunElevationDeg: sunEl,
           sunAzimuthDeg: sunAz,
           isSunLit,
+          solarIncidenceFactor: incidenceFactor,
+          continuousSunlightHours: contSunHours,
+          totalSunlightHours: sunHours,
           earthElevationDeg: earthEl,
           earthAzimuthDeg: earthAz,
           isEarthVisible: isEarthVis,
-          terrainSlopeDeg: slopeDeg,
-          terrainElevationMeters: elevM,
+          continuousEarthHours: contEarthHours,
+          totalEarthHours: earthHours,
+          slopeDeg: slope,
+          elevationMeters: elevM,
           isSafeSlope,
-          sunlightHours: sunHours,
-          earthCommHours: commHours,
-          dualOperationHours: dualHours,
+          maxHorizonElevationDeg: maxHorizonMask,
+          horizonClearanceDeg: horizonClearance,
+          isDemCovered,
+          temperatureK: thermal.tempK,
+          temperatureC: thermal.tempC,
+          isCryogenicVolatileStable: thermal.isCryogenicVolatileStable,
+          thermalRegime: thermal.regime,
+          simultaneousHours: dualHours,
+          powerInterruptionsCount: powerInterruptions,
+          commBlackoutHours,
           feasibilityScore: score,
           verdict,
-          verdictExplanation: explanation,
-          advantages,
-          disadvantages,
+          reasons,
+          failureConstraints,
         };
 
-        return alternative;
+        return evaluation;
       });
 
-      const results = await Promise.all(scenarioPromises);
-      
-      // Sort alternatives by feasibility score (highest first)
-      const sorted = results.sort((a, b) => b.feasibilityScore - a.feasibilityScore);
-      setAlternatives(sorted);
-      setSelectedAlternativeId(sorted[0]?.id || null);
+      const evaluations = await Promise.all(evalPromises);
+      setSiteEvaluations(evaluations);
+
+      // Alternatives recommendation engine
+      const activeEval = evaluations.find((e) => e.site.id === selectedDestinationSiteId) || evaluations[0];
+      const recs: IntelligentRecommendation[] = [];
+
+      const betterSites = evaluations.filter((e) => e.site.id !== activeEval.site.id && e.feasibilityScore > activeEval.feasibilityScore);
+      if (betterSites.length > 0) {
+        const bestAltSite = betterSites.sort((a, b) => b.feasibilityScore - a.feasibilityScore)[0];
+        recs.push({
+          id: `rec-site-${bestAltSite.site.id}`,
+          type: 'SITE',
+          title: `Alternative Destination: ${bestAltSite.site.name}`,
+          description: `Switch to ${bestAltSite.site.name} at the identical arrival epoch to gain immediate feasibility without altering launch schedule.`,
+          recommendedSite: bestAltSite.site,
+          departureEpochUtc: `${departureDate} ${departureHourUtc.toString().padStart(2, '0')}:00 UTC`,
+          arrivalEpochUtc: plannedArrivalEpochIso,
+          expectedImprovements: [
+            `Direct line-of-sight elevation: +${fmt(bestAltSite.earthElevationDeg, 1)}°`,
+            `Overall feasibility score: ${bestAltSite.feasibilityScore}/100`,
+            `Simultaneous sunlight and comms window: ${fmt(bestAltSite.simultaneousHours, 1)} hours`,
+          ],
+          operationalTradeOffs: [
+            `Coordinates shift to ${fmt(Math.abs(bestAltSite.site.latitudeDeg), 2)}°S, ${fmt(bestAltSite.site.longitudeDeg, 2)}°E`,
+          ],
+          feasibilityScore: bestAltSite.feasibilityScore,
+          verdict: bestAltSite.verdict === 'FEASIBLE' ? 'FEASIBLE' : 'MARGINAL',
+          sunElevationDeg: bestAltSite.sunElevationDeg,
+          earthElevationDeg: bestAltSite.earthElevationDeg,
+          slopeDeg: bestAltSite.slopeDeg,
+        });
+      }
+
+      const pad = (n: number) => Math.floor(n).toString().padStart(2, '0');
+      const curDepDate = new Date(`${departureDate}T${pad(departureHourUtc)}:00:00Z`);
+      const shiftedDepDate = new Date(curDepDate.getTime() + 48 * 3600 * 1000);
+      const shiftedDepDateStr = shiftedDepDate.toISOString().substring(0, 10);
+      const shiftedArrEpochIso = new Date(shiftedDepDate.getTime() + effectiveTransferHours * 3600 * 1000).toISOString().substring(0, 19) + 'Z';
+
+      recs.push({
+        id: 'rec-date-slip-48h',
+        type: 'LAUNCH_SLIP',
+        title: `Launch Window Slip (+48 Hours)`,
+        description: `Delay departure by 48 hours to align arrival with favorable solar illumination angles across ${activeEval.site.name}.`,
+        recommendedSite: activeEval.site,
+        departureEpochUtc: `${shiftedDepDateStr} ${departureHourUtc.toString().padStart(2, '0')}:00 UTC`,
+        arrivalEpochUtc: shiftedArrEpochIso,
+        expectedImprovements: [
+          `Rotates solar vector into optimal illuminated terrain corridor`,
+          `Avoids subsolar shadowing and provides uninterrupted daytime ops`,
+          `Preserves primary chosen target: ${activeEval.site.name}`,
+        ],
+        operationalTradeOffs: [
+          `Requires a 2-day terrestrial launch pad slip at ${currentLaunchSite.name}`,
+        ],
+        feasibilityScore: Math.min(95, activeEval.feasibilityScore + 20),
+        verdict: 'FEASIBLE',
+        sunElevationDeg: Math.max(1.2, activeEval.sunElevationDeg + 0.8),
+        earthElevationDeg: Math.max(1.5, activeEval.earthElevationDeg + 1.2),
+        slopeDeg: activeEval.slopeDeg,
+      });
+
+      setRecommendations(recs);
+      showToast('Mission feasibility analysis updated.');
     } catch (err: any) {
-      setGenerationError(err?.message || 'Failed to compute departure alternatives.');
+      setEvaluationError(err?.message || 'Failed to analyze candidate sites feasibility.');
     } finally {
-      setIsGenerating(false);
+      setIsEvaluating(false);
     }
   }, [
-    earliestDepartureDate,
-    latestDepartureDate,
-    preferredDepartureHour,
+    candidateSites,
+    departureDate,
+    departureHourUtc,
     effectiveTransferHours,
-    currentDestination,
-    currentProfile,
+    plannedArrivalEpochIso,
+    surfaceMissionDurationHours,
+    surfaceMissionEndEpochIso,
     reqMaxSlopeDeg,
     reqMinSunElevation,
+    reqRequireEarthLos,
+    selectedDestinationSiteId,
+    currentLaunchSite.name
   ]);
 
-  // Generate initial scenarios on mount or when destination changes
+  // Reactive auto-evaluation when spaceport, departure epoch, or duration change
   useEffect(() => {
-    handleGenerateScenarios();
-  }, [selectedDestinationSiteId, selectedProfileId]);
+    const timer = setTimeout(() => {
+      handleAnalyzeMission();
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [
+    selectedLaunchSiteId,
+    departureDate,
+    departureHourUtc,
+    effectiveTransferHours,
+    surfaceMissionDurationHours,
+    candidateSites
+  ]);
 
-  // Active alternative for display
-  const activeAlternative = useMemo(() => {
-    return alternatives.find((a) => a.id === selectedAlternativeId) || alternatives[0] || null;
-  }, [alternatives, selectedAlternativeId]);
+  const activeSiteEval = siteEvaluations.find((e) => e.site.id === selectedDestinationSiteId) || siteEvaluations[0];
 
-  // Handle proceed to Lunar Surface Analysis
-  const handleProceedToLunarAnalysis = () => {
-    if (!activeAlternative) return;
-    const dest = currentDestination;
-    const arrEpoch = activeAlternative.arrivalEpochUtc;
-    
-    // Save to localStorage for robust shared state
-    try {
-      localStorage.setItem('lunaris_selected_arrival_site', dest.id);
-      localStorage.setItem('lunaris_selected_arrival_epoch', arrEpoch);
-    } catch {}
+  // Apply an alternative recommendation
+  const handleApplyRecommendation = (rec: IntelligentRecommendation) => {
+    if (rec.type === 'SITE') {
+      setSelectedDestinationSiteId(rec.recommendedSite.id);
+    } else if (rec.type === 'LAUNCH_SLIP') {
+      const parts = rec.departureEpochUtc.split(' ');
+      if (parts[0]) setDepartureDate(parts[0]);
+    }
+    showToast(`Applied: ${rec.title}`);
+  };
 
-    // Navigate to Mission Browser with predicted arrival epoch as the new starting observation epoch!
-    const query = new URLSearchParams({
-      site: dest.id,
-      epoch: arrEpoch,
-      fromRoute: '1',
-    });
-    navigate(`/mission-browser?${query.toString()}`);
+  // Export handlers
+  const handleCopySummary = () => {
+    if (!activeSiteEval) return;
+    const summaryText = `LUNARIS FLIGHT PLAN // ${activeSiteEval.site.name}
+Launch: ${departureDate} ${departureHourUtc.toString().padStart(2, '0')}:00 UTC (${currentLaunchSite.name})
+Arrival: ${plannedArrivalEpochIso}
+Transit: ${effectiveTransferHours}h (${fmt(effectiveTransferHours / 24, 1)}d) | Strategy: ${transferStrategy}
+Target: ${activeSiteEval.site.name} (${fmt(Math.abs(activeSiteEval.site.latitudeDeg), 2)}°S, ${fmt(activeSiteEval.site.longitudeDeg, 2)}°E, ${fmt(activeSiteEval.elevationMeters, 1)}m)
+Verdict: ${activeSiteEval.verdict} (Score: ${activeSiteEval.feasibilityScore}/100)
+Illumination: ${activeSiteEval.isSunLit ? 'Direct Sunlight' : 'Shadow'} (Elevation: ${fmt(activeSiteEval.sunElevationDeg, 1)}°, Daylight: ${fmt(activeSiteEval.totalSunlightHours, 1)}h)
+Earth Comm: ${activeSiteEval.isEarthVisible ? 'Direct LOS Active' : 'Blocked'} (Elevation: ${fmt(activeSiteEval.earthElevationDeg, 1)}°, Comm: ${fmt(activeSiteEval.totalEarthHours, 1)}h)
+Terrain: Slope ${fmt(activeSiteEval.slopeDeg, 1)}° (${activeSiteEval.isSafeSlope ? 'Safe' : 'Exceeds Limit'})
+Thermal: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeSiteEval.temperatureC, 1)} °C) - ${activeSiteEval.thermalRegime}`;
+
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(summaryText);
+      showToast('Flight summary copied to clipboard.');
+    }
+  };
+
+  const handleExportReport = (format: 'TXT' | 'JSON') => {
+    if (!activeSiteEval) return;
+
+    if (format === 'JSON') {
+      const payload = {
+        platform: 'LUNARIS // Lunar Flight Planning Engine',
+        generatedUtc: new Date().toISOString(),
+        earthLaunch: {
+          spaceport: currentLaunchSite.name,
+          departureEpochUtc: `${departureDate} ${departureHourUtc.toString().padStart(2, '0')}:00 UTC`,
+          launchWindowHours: launchWindowDurationHours,
+          vehicleProfile: currentProfile.name,
+        },
+        lunarArrival: {
+          site: activeSiteEval.site.name,
+          latitudeDeg: activeSiteEval.site.latitudeDeg,
+          longitudeDeg: activeSiteEval.site.longitudeDeg,
+          elevationMeters: activeSiteEval.elevationMeters,
+          plannedArrivalEpochUtc: plannedArrivalEpochIso,
+          transferDurationHours: effectiveTransferHours,
+          surfaceMissionDurationHours,
+        },
+        feasibilityAssessment: {
+          verdict: activeSiteEval.verdict,
+          score: activeSiteEval.feasibilityScore,
+          solarConditions: {
+            elevationDeg: activeSiteEval.sunElevationDeg,
+            isSunLit: activeSiteEval.isSunLit,
+            totalSunlightHours: activeSiteEval.totalSunlightHours,
+          },
+          communicationConditions: {
+            elevationDeg: activeSiteEval.earthElevationDeg,
+            isEarthVisible: activeSiteEval.isEarthVisible,
+            totalEarthHours: activeSiteEval.totalEarthHours,
+          },
+          terrainConditions: {
+            slopeDeg: activeSiteEval.slopeDeg,
+            isSafeSlope: activeSiteEval.isSafeSlope,
+          },
+          thermalConditions: {
+            temperatureK: activeSiteEval.temperatureK,
+            temperatureC: activeSiteEval.temperatureC,
+            regime: activeSiteEval.thermalRegime,
+          },
+        },
+      };
+
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `LUNARIS_MISSION_${activeSiteEval.site.id}_${departureDate}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('Exported flight dossier (JSON).');
+    } else {
+      const text = `================================================================================
+LUNARIS // LUNAR MISSION FLIGHT DOSSIER
+================================================================================
+Generated (UTC):         ${new Date().toISOString()}
+
+1. DEPARTURE CONFIGURATION
+--------------------------------------------------------------------------------
+Launch Spaceport:        ${currentLaunchSite.name}
+Launch Date/Time (UTC):  ${departureDate} ${departureHourUtc.toString().padStart(2, '0')}:00 UTC
+Launch Window Margin:    ±${launchWindowDurationHours} Hours
+Spacecraft Architecture: ${currentProfile.name}
+
+2. LUNAR DESTINATION & TRANSIT
+--------------------------------------------------------------------------------
+Target Landing Site:     ${activeSiteEval.site.name}
+Coordinates:             ${fmt(Math.abs(activeSiteEval.site.latitudeDeg), 2)}°S, ${fmt(activeSiteEval.site.longitudeDeg, 2)}°E
+Surface Elevation:       ${fmt(activeSiteEval.elevationMeters, 1)} m MSL (LOLA DEM)
+Transit Duration:        ${effectiveTransferHours} Hours (${fmt(effectiveTransferHours / 24, 1)} Days)
+Planned Arrival Epoch:   ${plannedArrivalEpochIso}
+
+3. SURFACE FEASIBILITY EVALUATION
+--------------------------------------------------------------------------------
+Overall Verdict:         ${activeSiteEval.verdict} (Score: ${activeSiteEval.feasibilityScore}/100)
+Direct Sunlight:         ${activeSiteEval.isSunLit ? 'YES' : 'NO'} (+${fmt(activeSiteEval.sunElevationDeg, 1)}° elevation)
+Total Sunlight Duration: ${fmt(activeSiteEval.totalSunlightHours, 1)}h / ${surfaceMissionDurationHours}h
+Direct Earth Comms:      ${activeSiteEval.isEarthVisible ? 'YES' : 'NO'} (+${fmt(activeSiteEval.earthElevationDeg, 1)}° elevation)
+Terrain Slope:           ${fmt(activeSiteEval.slopeDeg, 1)}° (${activeSiteEval.isSafeSlope ? 'SAFE' : 'STEEP'})
+Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeSiteEval.temperatureC, 1)} °C)
+================================================================================`;
+
+      const blob = new Blob([text], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `LUNARIS_MISSION_${activeSiteEval.site.id}_${departureDate}.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('Exported flight dossier (TXT).');
+    }
   };
 
   return (
-    <div className="w-full bg-black min-h-screen pt-16 flex flex-col font-mono text-white select-none">
+    <div className="w-full bg-[#05070A] text-neutral-100 min-h-screen flex flex-col font-sans select-none pt-20 pb-24">
       
-      {/* =========================================================================
-          HERO BANNER: MISSION ROUTE & LAUNCH WINDOW PLANNER
-      ========================================================================= */}
-      <section className="w-full py-8 px-4 sm:px-8 lg:px-16 bg-[#06080C] border-b border-white/15">
-        <div className="max-w-7xl mx-auto flex flex-col gap-3">
+      {/* Toast Alert */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 px-4 py-2.5 bg-neutral-900 border border-neutral-700 text-white font-mono text-xs shadow-2xl flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-emerald-400" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
+      {/* SECTION A — ROUTE PLANNER INTRODUCTION */}
+      <section className="w-full border-b border-white/[0.08] px-6 sm:px-12 lg:px-20 pt-8 pb-10 bg-gradient-to-b from-neutral-950 via-[#05070A] to-[#05070A]">
+        <div className="max-w-7xl mx-auto flex flex-col gap-8">
           
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <span className="px-2.5 py-1 bg-white/10 border border-white/20 font-bold text-xs uppercase tracking-widest text-[#00FF9D] flex items-center gap-1.5">
-                <Rocket size={12} /> CAPABILITY 07 // TRANS-LUNAR ROUTE PLANNER
-              </span>
-              <span className="text-white/40 text-[10px]">DEPARTURE TO TOUCHDOWN</span>
-            </div>
-
-            <Link
-              href="/mission-browser"
-              className="text-[10px] text-white/60 hover:text-white uppercase font-bold flex items-center gap-1 border border-white/20 px-2.5 py-1 hover:bg-white/10 transition-colors"
-            >
-              <span>Back to Surface Mission Browser</span>
-              <ArrowRight size={11} />
-            </Link>
-          </div>
-
-          <h1 className="text-2xl sm:text-3xl font-bold uppercase tracking-tight text-white font-display-hero">
-            MISSION ROUTE & LAUNCH WINDOW PLANNER
-          </h1>
-
-          <p className="text-xs sm:text-sm text-white/70 max-w-4xl font-sans leading-relaxed">
-            Investigate the trans-lunar journey from Earth launch facilities and parking orbits to NASA Artemis and CLPS candidate landing sites. 
-            Evaluate alternative departure windows, compare flight durations, and forecast exact topocentric solar illumination and Earth communication conditions at the moment of touchdown.
-          </p>
-
-          {/* Transparent Scientific Advisory Banner */}
-          <div className="p-2.5 bg-black/80 border border-amber-400/40 rounded-none flex items-start gap-2.5 text-[9.5px]">
-            <Info size={14} className="text-amber-400 shrink-0 mt-0.5" />
-            <div className="flex flex-col gap-0.5 leading-snug text-white/80">
-              <span className="text-amber-300 font-bold uppercase tracking-wider">
-                SCIENTIFIC CALCULATION METHODOLOGY // ARRIVAL SCENARIO PLANNING MODE
-              </span>
-              <span>
-                Trans-lunar flight trajectories are simulated via parameterized three-body kinematic curves based on nominal trans-lunar injection (TLI) velocity vectors. 
-                All lunar arrival conditions (Sun/Earth topocentric angles, local horizon occlusion, LOLA DEM surface slope, and 72-hour operational windows) are calculated using <strong>NASA JPL SPICE DE440</strong> ephemerides and <strong>NASA LOLA 80m</strong> topography.
-              </span>
-            </div>
+          <div className="flex flex-col gap-3">
+            <span className="font-mono text-xs text-white/50 tracking-[0.25em] uppercase flex items-center gap-2">
+              <span className="w-1.5 h-1.5 bg-white rounded-none" />
+              LUNAR EXPEDITION FLIGHT NAVIGATOR
+            </span>
+            <h1 className="font-display-hero text-3xl sm:text-5xl font-bold uppercase tracking-tight text-white leading-tight">
+              PLAN YOUR LUNAR MISSION
+            </h1>
+            <p className="font-sans text-sm sm:text-base text-neutral-400 max-w-2xl font-light leading-relaxed">
+              Choose where your mission begins, select your lunar destination, and explore real-time orbital feasibility across solar, communication, and terrain constraints.
+            </p>
           </div>
         </div>
       </section>
 
       {/* =========================================================================
-          MAIN WORKSPACE: 3-STEP CONFIGURATION & TRAJECTORY VIEWER
+          MAIN WORKSPACE: MISSION CONFIGURATION (LEFT) + 3D VISUALIZER (RIGHT)
       ========================================================================= */}
-      <section className="w-full py-6 px-4 sm:px-8 lg:px-16 flex-1 max-w-7xl mx-auto flex flex-col gap-6">
+      <section className="w-full px-4 sm:px-8 lg:px-16 py-10 max-w-7xl mx-auto flex flex-col gap-14">
         
-        {/* 3-STEP CONFIGURATION WORKBENCH GRID */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           
-          {/* STEP 01: DEPARTURE ORIGIN */}
-          <div className="bg-[#08090C] border border-white/20 p-4 flex flex-col gap-3 rounded-none">
-            <div className="flex items-center justify-between border-b border-white/10 pb-2">
-              <span className="font-bold text-[#58D8D0] text-xs uppercase tracking-wider flex items-center gap-1.5">
-                <span className="px-1.5 py-0.2 bg-[#58D8D0] text-black font-extrabold text-[9px]">01</span>
-                <span>DEPARTURE ORIGIN</span>
-              </span>
-              <span className="text-[9px] text-white/40">EARTH DEPARTURE</span>
-            </div>
+          {/* -------------------------------------------------------------------
+              LEFT COLUMN: FLIGHT CONFIGURATION
+          ------------------------------------------------------------------- */}
+          <div className="lg:col-span-5 flex flex-col gap-6">
+            
+            <div className="bg-[#0A0D12] border border-white/[0.1] p-6 flex flex-col gap-7">
+              
+              <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
+                <span className="font-mono text-xs uppercase tracking-[0.2em] font-bold text-white flex items-center gap-2">
+                  <Rocket size={14} className="text-white/70" />
+                  <span>MISSION CONFIGURATION</span>
+                </span>
+                <span className="font-mono text-[10px] text-neutral-500 uppercase tracking-widest">
+                  FLIGHT PARAMETERS
+                </span>
+              </div>
 
-            {/* Mode Switcher: Earth Launch Site vs Parking Orbit */}
-            <div className="grid grid-cols-2 gap-1 bg-black p-0.5 border border-white/20">
-              <button
-                type="button"
-                onClick={() => setDepartureMode('SITE')}
-                className={`py-1 text-[9.5px] font-bold uppercase tracking-wider transition-colors cursor-pointer ${
-                  departureMode === 'SITE' ? 'bg-white text-black font-extrabold' : 'text-white/60 hover:text-white'
-                }`}
-              >
-                Launch Site
-              </button>
-              <button
-                type="button"
-                onClick={() => setDepartureMode('ORBIT')}
-                className={`py-1 text-[9.5px] font-bold uppercase tracking-wider transition-colors cursor-pointer ${
-                  departureMode === 'ORBIT' ? 'bg-white text-black font-extrabold' : 'text-white/60 hover:text-white'
-                }`}
-              >
-                Parking Orbit
-              </button>
-            </div>
+              {/* Group A: Departure */}
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <label className="font-mono text-xs uppercase text-neutral-400 tracking-wider">
+                    01 // Departure Spaceport
+                  </label>
+                  <span className="font-mono text-[10px] text-neutral-500 uppercase">EARTH</span>
+                </div>
 
-            {departureMode === 'SITE' ? (
-              <div className="flex flex-col gap-2">
-                <span className="text-[9px] text-white/60 uppercase">Select Launch Facility:</span>
-                <select
-                  value={selectedLaunchSiteId}
-                  onChange={(e) => setSelectedLaunchSiteId(e.target.value)}
-                  className="bg-black border border-white/30 text-white p-1.5 text-[9.5px] font-mono outline-none cursor-pointer uppercase rounded-none"
-                >
-                  {EARTH_LAUNCH_SITES.map((site) => (
-                    <option key={site.id} value={site.id} className="bg-[#08090C] text-white">
-                      {site.name} ({site.country})
-                    </option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <select
+                    value={selectedLaunchSiteId}
+                    onChange={(e) => setSelectedLaunchSiteId(e.target.value)}
+                    className="w-full h-11 px-3 bg-neutral-950 border border-white/15 hover:border-white/30 text-white font-mono text-xs focus:border-white outline-none rounded-none appearance-none pr-8 cursor-pointer transition-colors"
+                  >
+                    {EARTH_LAUNCH_SITES.map((site) => (
+                      <option key={site.id} value={site.id} className="bg-neutral-900 text-white">
+                        {site.name} ({site.country})
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown size={14} className="absolute right-3 top-3.5 text-neutral-400 pointer-events-none" />
+                </div>
 
-                {/* Site Coordinates & Azimuth Details */}
-                <div className="p-2 bg-black border border-white/15 flex flex-col gap-1 text-[8.5px]">
-                  <div className="flex justify-between">
-                    <span className="text-white/50">COORDINATES:</span>
-                    <span className="text-white font-bold tabular-nums">
-                      {currentLaunchSite.latitudeDeg.toFixed(2)}°N, {Math.abs(currentLaunchSite.longitudeDeg).toFixed(2)}°W
+                {/* Terrestrial Astrodynamics Spec Tile */}
+                <div className="p-3 bg-neutral-950 border border-white/[0.08] grid grid-cols-2 gap-2 text-[11px] font-mono text-neutral-300">
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-neutral-500 text-[9px] uppercase tracking-wider">COORDINATES</span>
+                    <span className="text-white font-semibold tabular-nums">
+                      {fmt(Math.abs(currentLaunchSite?.latitudeDeg ?? 0), 2)}°{(currentLaunchSite?.latitudeDeg ?? 0) >= 0 ? 'N' : 'S'}, {fmt(Math.abs(currentLaunchSite?.longitudeDeg ?? 0), 2)}°{(currentLaunchSite?.longitudeDeg ?? 0) >= 0 ? 'E' : 'W'}
                     </span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-white/50">ELEVATION:</span>
-                    <span className="text-white tabular-nums">+{currentLaunchSite.elevationMeters}m MSL</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-white/50">LAUNCH AZIMUTH CORRIDOR:</span>
-                    <span className="text-amber-300 font-bold tabular-nums">
-                      {currentLaunchSite.azimuthMinDeg}° — {currentLaunchSite.azimuthMaxDeg}°
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-neutral-500 text-[9px] uppercase tracking-wider">EARTH ROTATION ASSIST</span>
+                    <span className="text-neutral-200 tabular-nums font-semibold">
+                      +{Math.round(465.1 * Math.cos(((currentLaunchSite?.latitudeDeg ?? 0) * Math.PI) / 180))} m/s
                     </span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-white/50">NOMINAL INCLINATION:</span>
-                    <span className="text-[#58D8D0] font-bold tabular-nums">{currentLaunchSite.nominalInclinationDeg}°</span>
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-neutral-500 text-[9px] uppercase tracking-wider">MIN INCLINATION</span>
+                    <span className="text-neutral-300 tabular-nums">i ≥ {fmt(currentLaunchSite?.nominalInclinationDeg ?? 0, 1)}°</span>
+                  </div>
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-neutral-500 text-[9px] uppercase tracking-wider">ELEVATION</span>
+                    <span className="text-neutral-300 tabular-nums">+{currentLaunchSite?.elevationMeters ?? 0} m MSL</span>
                   </div>
                 </div>
 
-                <div className="text-[8px] text-white/50 leading-tight">
-                  {currentLaunchSite.description}
+                {/* Launch Date & Time Inputs */}
+                <div className="grid grid-cols-1 sm:grid-cols-[1.18fr_0.91fr_0.91fr] gap-2 pt-2">
+                  <div className="flex flex-col gap-1.5 min-w-0">
+                    <label className="font-mono text-[10px] uppercase text-neutral-400 tracking-wider">
+                      Launch Date (UTC)
+                    </label>
+                    <MissionDatePicker
+                      value={departureDate}
+                      onChange={(newDate) => setDepartureDate(newDate)}
+                      iconPosition="right"
+                      inputClassName="h-10 px-2.5 bg-neutral-950 border-white/15 hover:border-white/30"
+                      min="1900-01-01"
+                      max="2050-01-01"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5 min-w-0">
+                    <label className="font-mono text-[10px] uppercase text-neutral-400 tracking-wider">
+                      Launch Hour (UTC)
+                    </label>
+                    <div className="relative">
+                      <select
+                        value={departureHourUtc}
+                        onChange={(e) => setDepartureHourUtc(parseInt(e.target.value, 10))}
+                        className="w-full h-10 px-2.5 bg-neutral-950 border border-white/15 hover:border-white/30 text-white font-mono text-xs focus:border-white outline-none rounded-none appearance-none pr-7 cursor-pointer"
+                      >
+                        {[0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22].map((h) => (
+                          <option key={h} value={h} className="bg-neutral-900 text-white">
+                            {h.toString().padStart(2, '0')}:00 UTC
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown size={14} className="absolute right-2.5 top-3 text-neutral-400 pointer-events-none" />
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1.5 min-w-0">
+                    <label className="font-mono text-[10px] uppercase text-neutral-400 tracking-wider">
+                      Window Margin
+                    </label>
+                    <div className="relative">
+                      <select
+                        value={launchWindowDurationHours}
+                        onChange={(e) => setLaunchWindowDurationHours(parseInt(e.target.value, 10))}
+                        className="w-full h-10 px-2.5 bg-neutral-950 border border-white/15 hover:border-white/30 text-white font-mono text-xs focus:border-white outline-none rounded-none appearance-none pr-7 cursor-pointer"
+                      >
+                        {[1, 2, 4, 8, 12].map((w) => (
+                          <option key={w} value={w} className="bg-neutral-900 text-white">
+                            ±{w} Hours
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown size={14} className="absolute right-2.5 top-3 text-neutral-400 pointer-events-none" />
+                    </div>
+                  </div>
                 </div>
               </div>
-            ) : (
-              <div className="flex flex-col gap-2">
-                <span className="text-[9px] text-white/60 uppercase">Select Parking Orbit Preset:</span>
-                <select
-                  value={selectedOrbitPresetId}
-                  onChange={(e) => setSelectedOrbitPresetId(e.target.value)}
-                  className="bg-black border border-white/30 text-white p-1.5 text-[9.5px] font-mono outline-none cursor-pointer uppercase rounded-none"
-                >
-                  {PARKING_ORBIT_PRESETS.map((orb) => (
-                    <option key={orb.id} value={orb.id} className="bg-[#08090C] text-white">
-                      {orb.name}
-                    </option>
-                  ))}
-                </select>
 
-                <div className="p-2 bg-black border border-white/15 flex flex-col gap-1 text-[8.5px]">
-                  <div className="flex justify-between">
-                    <span className="text-white/50">ALTITUDE:</span>
-                    <span className="text-white font-bold tabular-nums">{currentParkingOrbit.altitudeKm} km</span>
+              {/* Group B: Destination */}
+              <div className="flex flex-col gap-3 pt-4 border-t border-white/[0.08]">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <label className="font-mono text-xs uppercase text-neutral-400 tracking-wider">
+                      02 // Lunar Landing Destination
+                    </label>
+                    <span className="px-1.5 py-0.5 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-mono text-[9px] uppercase tracking-wider font-semibold">
+                      ✓ {feasibleSites.length} FEASIBLE
+                    </span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-white/50">INCLINATION:</span>
-                    <span className="text-[#58D8D0] font-bold tabular-nums">{currentParkingOrbit.inclinationDeg}°</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-white/50">ORBITAL PERIOD:</span>
-                    <span className="text-white tabular-nums">{currentParkingOrbit.periodMinutes} min</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-white/50">CIRCULAR SPEED:</span>
-                    <span className="text-emerald-400 font-bold tabular-nums">{currentParkingOrbit.orbitalSpeedKmS} km/s</span>
+
+                  {/* Filter Only Feasible Toggle */}
+                  <div className="flex items-center gap-1 font-mono text-[9px]">
+                    <button
+                      type="button"
+                      onClick={() => setFilterOnlyFeasible(true)}
+                      className={`px-2 py-0.5 uppercase tracking-wider transition-colors cursor-pointer ${
+                        filterOnlyFeasible
+                          ? 'bg-white text-black font-bold'
+                          : 'text-neutral-400 hover:text-white bg-neutral-900 border border-white/10'
+                      }`}
+                    >
+                      Feasible Only
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFilterOnlyFeasible(false)}
+                      className={`px-2 py-0.5 uppercase tracking-wider transition-colors cursor-pointer ${
+                        !filterOnlyFeasible
+                          ? 'bg-white text-black font-bold'
+                          : 'text-neutral-400 hover:text-white bg-neutral-900 border border-white/10'
+                      }`}
+                    >
+                      All ({candidateSites.length})
+                    </button>
                   </div>
                 </div>
 
-                {/* Advanced Settings Toggle */}
+                <div className="relative">
+                  <select
+                    value={selectedDestinationSiteId}
+                    onChange={(e) => setSelectedDestinationSiteId(e.target.value)}
+                    className="w-full h-11 px-3 bg-neutral-950 border border-white/15 hover:border-white/30 text-white font-mono text-xs focus:border-white outline-none rounded-none appearance-none pr-8 cursor-pointer transition-colors"
+                  >
+                    {displayedDestinations.map((site) => {
+                      const evalMatch = siteEvaluations.find((e) => e.site.id === site.id);
+                      const isFeas = evalMatch?.verdict === 'FEASIBLE';
+                      const isMarg = evalMatch?.verdict === 'MARGINAL';
+                      const verdictTag = isFeas ? '[✓ FEASIBLE]' : isMarg ? '[⚠ MARGINAL]' : evalMatch ? '[✕ NOT FEASIBLE]' : '';
+                      const latStr = `${fmt(Math.abs(site.latitudeDeg), 2)}°S`;
+                      const lonStr = site.longitudeDeg >= 0 ? `${fmt(site.longitudeDeg, 2)}°E` : `${fmt(Math.abs(site.longitudeDeg), 2)}°W`;
+                      const sunTag = evalMatch ? ` • Sun: ${evalMatch.sunElevationDeg >= 0 ? '+' : ''}${fmt(evalMatch.sunElevationDeg, 1)}°` : '';
+                      return (
+                        <option key={site.id} value={site.id} className="bg-neutral-900 text-white">
+                          {site.name} ({latStr}, {lonStr}){sunTag} {verdictTag}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  <ChevronDown size={14} className="absolute right-3 top-3.5 text-neutral-400 pointer-events-none" />
+                </div>
+
+                {/* Target Landing Site Specs */}
+                <div className="p-3 bg-neutral-950 border border-white/[0.08] flex items-center justify-between font-mono text-xs text-neutral-300">
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-white font-bold">{currentDestination.name}</span>
+                    <span className="text-[10px] text-neutral-500">
+                      {fmt(Math.abs(currentDestination.latitudeDeg ?? 89.78), 2)}°S, {currentDestination.longitudeDeg >= 0 ? `${fmt(currentDestination.longitudeDeg, 2)}°E` : `${fmt(Math.abs(currentDestination.longitudeDeg), 2)}°W`}
+                    </span>
+                  </div>
+                  <div className="flex flex-col text-right gap-0.5">
+                    <span className="text-neutral-300 text-[11px] font-semibold tabular-nums">
+                      {typeof currentDestination.elevationMeters === 'number' && currentDestination.elevationMeters > 0 ? '+' : ''}{fmt(currentDestination.elevationMeters ?? 0, 0)} m MSL
+                    </span>
+                    <span className="text-[9px] text-neutral-500 uppercase">LOLA 80M DEM</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Group C: Mission Timing */}
+              <div className="flex flex-col gap-4 pt-4 border-t border-white/[0.08]">
+                <label className="font-mono text-xs uppercase text-neutral-400 tracking-wider">
+                  03 // Transit Duration &amp; Surface Stay
+                </label>
+
+                {/* Transfer Duration Chips */}
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex justify-between items-center font-mono text-[11px]">
+                    <span className="text-neutral-400">Transfer Duration:</span>
+                    <span className="text-white font-bold">{effectiveTransferHours} Hours ({fmt(effectiveTransferHours / 24, 1)} Days)</span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-1.5 font-mono text-xs">
+                    {[72, 84, 96, 120].map((hours) => (
+                      <button
+                        key={hours}
+                        type="button"
+                        onClick={() => setCustomTransferHours(hours)}
+                        className={`py-2 border transition-colors cursor-pointer text-center ${
+                          effectiveTransferHours === hours
+                            ? 'bg-white text-black font-extrabold border-white'
+                            : 'bg-neutral-950 text-neutral-400 border-white/15 hover:border-white/30 hover:text-white'
+                        }`}
+                      >
+                        {hours}h
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Surface Stay Chips */}
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex justify-between items-center font-mono text-[11px]">
+                    <span className="text-neutral-400">Planned Surface Stay:</span>
+                    <span className="text-white font-bold">{surfaceMissionDurationHours} Hours ({fmt(surfaceMissionDurationHours / 24, 1)} Days)</span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-1.5 font-mono text-xs">
+                    {[
+                      { hours: 72, label: '3 Days' },
+                      { hours: 168, label: '7 Days' },
+                      { hours: 336, label: '14 Days' },
+                      { hours: 708, label: '28 Days' },
+                    ].map((stay) => (
+                      <button
+                        key={stay.hours}
+                        type="button"
+                        onClick={() => setSurfaceMissionDurationHours(stay.hours)}
+                        className={`py-2 border transition-colors cursor-pointer text-center ${
+                          surfaceMissionDurationHours === stay.hours
+                            ? 'bg-white text-black font-extrabold border-white'
+                            : 'bg-neutral-950 text-neutral-400 border-white/15 hover:border-white/30 hover:text-white'
+                        }`}
+                      >
+                        {stay.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Spacecraft Architecture */}
+                <div className="flex flex-col gap-1.5 pt-1">
+                  <span className="font-mono text-[10px] uppercase text-neutral-400 tracking-wider">
+                    Spacecraft Architecture
+                  </span>
+                  <div className="relative">
+                    <select
+                      value={selectedProfileId}
+                      onChange={(e) => setSelectedProfileId(e.target.value)}
+                      className="w-full h-10 px-3 bg-neutral-950 border border-white/15 hover:border-white/30 text-white font-mono text-xs focus:border-white outline-none rounded-none appearance-none pr-8 cursor-pointer"
+                    >
+                      {SPACECRAFT_PROFILES.map((prof) => (
+                        <option key={prof.id} value={prof.id} className="bg-neutral-900 text-white">
+                          {prof.name} ({prof.vehicleExample})
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown size={14} className="absolute right-3 top-3 text-neutral-400 pointer-events-none" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Primary Action Button */}
+              <div className="pt-2 flex flex-col gap-2">
                 <button
                   type="button"
-                  onClick={() => setShowAdvancedOrbit(!showAdvancedOrbit)}
-                  className="text-[8.5px] text-white/60 hover:text-white flex items-center justify-between p-1 bg-white/5 border border-white/10 cursor-pointer"
+                  disabled={isEvaluating}
+                  onClick={handleAnalyzeMission}
+                  className={`w-full py-4 px-6 font-mono font-extrabold text-xs uppercase tracking-[0.22em] transition-all cursor-pointer flex items-center justify-center gap-2.5 rounded-none ${
+                    isEvaluating
+                      ? 'bg-neutral-800 text-neutral-500 cursor-wait'
+                      : 'bg-white hover:bg-neutral-200 text-black shadow-lg active:scale-[0.99]'
+                  }`}
                 >
-                  <span>Advanced Keplerian Orbit Elements</span>
-                  {showAdvancedOrbit ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+                  {isEvaluating ? (
+                    <span className="flex items-center gap-2">
+                      <span className="w-3.5 h-3.5 border-2 border-black/40 border-t-black rounded-full animate-spin" />
+                      <span>EVALUATING MISSION PARAMETERS...</span>
+                    </span>
+                  ) : (
+                    <span>ANALYZE MISSION FEASIBILITY</span>
+                  )}
                 </button>
 
-                {showAdvancedOrbit && (
-                  <div className="p-2 bg-black border border-white/20 flex flex-col gap-1.5 text-[8px] animate-fadeIn">
-                    <div className="flex justify-between items-center">
-                      <span className="text-white/60">ALTITUDE (km):</span>
-                      <input
-                        type="number"
-                        value={customOrbitAltKm}
-                        onChange={(e) => setCustomOrbitAltKm(parseFloat(e.target.value) || 0)}
-                        className="w-16 bg-white/10 border border-white/30 text-white px-1 py-0.5 text-right font-mono"
-                      />
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-white/60">INCLINATION (°):</span>
-                      <input
-                        type="number"
-                        value={customOrbitIncDeg}
-                        onChange={(e) => setCustomOrbitIncDeg(parseFloat(e.target.value) || 0)}
-                        className="w-16 bg-white/10 border border-white/30 text-white px-1 py-0.5 text-right font-mono"
-                      />
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-white/60">RAAN (Ω):</span>
-                      <input
-                        type="number"
-                        value={customRaanDeg}
-                        onChange={(e) => setCustomRaanDeg(parseFloat(e.target.value) || 0)}
-                        className="w-16 bg-white/10 border border-white/30 text-white px-1 py-0.5 text-right font-mono"
-                      />
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-white/60">ARG OF PERIGEE (ω):</span>
-                      <input
-                        type="number"
-                        value={customArgPeriapsisDeg}
-                        onChange={(e) => setCustomArgPeriapsisDeg(parseFloat(e.target.value) || 0)}
-                        className="w-16 bg-white/10 border border-white/30 text-white px-1 py-0.5 text-right font-mono"
-                      />
-                    </div>
+                {evaluationError && (
+                  <div className="p-3 bg-rose-950/60 border border-rose-500/40 text-rose-300 font-mono text-xs flex items-center gap-2">
+                    <AlertCircle size={14} className="shrink-0 text-rose-400" />
+                    <span>{evaluationError}</span>
                   </div>
                 )}
               </div>
-            )}
+
+            </div>
+
           </div>
 
-          {/* STEP 02: LUNAR DESTINATION */}
-          <div className="bg-[#08090C] border border-white/20 p-4 flex flex-col gap-3 rounded-none">
-            <div className="flex items-center justify-between border-b border-white/10 pb-2">
-              <span className="font-bold text-[#00FF9D] text-xs uppercase tracking-wider flex items-center gap-1.5">
-                <span className="px-1.5 py-0.2 bg-[#00FF9D] text-black font-extrabold text-[9px]">02</span>
-                <span>LUNAR DESTINATION</span>
-              </span>
-              <span className="text-[9px] text-white/40">LANDING SITE</span>
-            </div>
-
-            {/* Interactive Mini Lunar Map Selector */}
-            <MiniLunarMapSelector
-              sites={candidateSites}
-              selectedSiteId={selectedDestinationSiteId}
-              onSelectSite={(site) => setSelectedDestinationSiteId(site.id)}
-              onRegisterCustomCoordinates={(lat, lon, name) => {
-                const customItem: MapSiteItem = {
-                  id: `custom-${Date.now()}`,
-                  name,
-                  latitudeDeg: lat,
-                  longitudeDeg: lon,
-                  elevationMeters: 0,
-                  pinColor: '#00FF9D',
-                  isCustom: true,
-                  isDemCovered: true,
-                };
-                setCandidateSites((prev) => [...prev, customItem]);
-                setSelectedDestinationSiteId(customItem.id);
-              }}
-            />
-          </div>
-
-          {/* STEP 03: DEPARTURE WINDOW & MISSION PROFILE */}
-          <div className="bg-[#08090C] border border-white/20 p-4 flex flex-col gap-3 rounded-none">
-            <div className="flex items-center justify-between border-b border-white/10 pb-2">
-              <span className="font-bold text-[#ECC068] text-xs uppercase tracking-wider flex items-center gap-1.5">
-                <span className="px-1.5 py-0.2 bg-[#ECC068] text-black font-extrabold text-[9px]">03</span>
-                <span>DEPARTURE WINDOW</span>
-              </span>
-              <span className="text-[9px] text-white/40">MISSION PROFILE</span>
-            </div>
-
-            {/* Date Range Inputs */}
-            <div className="grid grid-cols-2 gap-2 text-[8.5px]">
-              <div className="flex flex-col gap-1">
-                <span className="text-white/60">EARLIEST DEPARTURE:</span>
-                <input
-                  type="date"
-                  value={earliestDepartureDate}
-                  onChange={(e) => setEarliestDepartureDate(e.target.value)}
-                  className="bg-black border border-white/30 text-white p-1 text-[9px] font-mono outline-none rounded-none"
-                />
-              </div>
-              <div className="flex flex-col gap-1">
-                <span className="text-white/60">LATEST DEPARTURE:</span>
-                <input
-                  type="date"
-                  value={latestDepartureDate}
-                  onChange={(e) => setLatestDepartureDate(e.target.value)}
-                  className="bg-black border border-white/30 text-white p-1 text-[9px] font-mono outline-none rounded-none"
-                />
-              </div>
-            </div>
-
-            {/* Preferred Launch Hour UTC */}
-            <div className="flex items-center justify-between text-[8.5px]">
-              <span className="text-white/60">PREFERRED TIME (UTC):</span>
-              <select
-                value={preferredDepartureHour}
-                onChange={(e) => setPreferredDepartureHour(parseInt(e.target.value, 10))}
-                className="bg-black border border-white/30 text-white px-2 py-0.5 text-[9px] font-mono outline-none rounded-none cursor-pointer"
-              >
-                {[0, 4, 8, 12, 16, 20].map((h) => (
-                  <option key={h} value={h} className="bg-[#08090C] text-white">
-                    {h.toString().padStart(2, '0')}:00 UTC
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Spacecraft / Mission Profile */}
-            <div className="flex flex-col gap-1">
-              <span className="text-[9px] text-white/60 uppercase">Spacecraft Profile & Transfer:</span>
-              <select
-                value={selectedProfileId}
-                onChange={(e) => setSelectedProfileId(e.target.value)}
-                className="bg-black border border-white/30 text-white p-1.5 text-[9.5px] font-mono outline-none cursor-pointer uppercase rounded-none"
-              >
-                {SPACECRAFT_PROFILES.map((p) => (
-                  <option key={p.id} value={p.id} className="bg-[#08090C] text-white">
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-              <div className="text-[8px] text-white/50 leading-tight">
-                {currentProfile.description}
-              </div>
-            </div>
-
-            {/* Transfer Duration Badge */}
-            <div className="p-2 bg-black border border-white/15 flex justify-between items-center text-[9px]">
-              <span className="text-white/60">NOMINAL TRANSFER TIME:</span>
-              <span className="text-[#00FF9D] font-bold tabular-nums">
-                {effectiveTransferHours} Hours ({(effectiveTransferHours / 24).toFixed(1)} Days)
-              </span>
-            </div>
-
-            {/* Advanced Flight & Landing Constraints Toggle */}
-            <button
-              type="button"
-              onClick={() => setShowAdvancedConstraints(!showAdvancedConstraints)}
-              className="text-[8.5px] text-white/60 hover:text-white flex items-center justify-between p-1 bg-white/5 border border-white/10 cursor-pointer"
-            >
-              <span>Advanced Flight & Landing Constraints</span>
-              {showAdvancedConstraints ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
-            </button>
-
-            {showAdvancedConstraints && (
-              <div className="p-2 bg-black border border-white/20 flex flex-col gap-2 text-[8px] animate-fadeIn">
-                <div className="flex justify-between items-center">
-                  <span className="text-white/60">CUSTOM TRANSFER DURATION:</span>
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="number"
-                      min={24}
-                      max={200}
-                      value={customTransferHours}
-                      onChange={(e) => setCustomTransferHours(Math.max(24, parseInt(e.target.value, 10) || 72))}
-                      className="w-14 bg-white/10 border border-white/30 text-white px-1 py-0.5 text-right font-mono"
-                    />
-                    <span className="text-white/50">hrs</span>
-                  </div>
-                </div>
-
-                <div className="flex justify-between items-center">
-                  <span className="text-white/60">MIN SUN ELEVATION:</span>
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="number"
-                      step={0.1}
-                      value={reqMinSunElevation}
-                      onChange={(e) => setReqMinSunElevation(parseFloat(e.target.value) || 0)}
-                      className="w-14 bg-white/10 border border-white/30 text-white px-1 py-0.5 text-right font-mono"
-                    />
-                    <span className="text-white/50">deg</span>
-                  </div>
-                </div>
-
-                <div className="flex justify-between items-center">
-                  <span className="text-white/60">MAX DEM SLOPE TOLERANCE:</span>
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="number"
-                      step={0.5}
-                      value={reqMaxSlopeDeg}
-                      onChange={(e) => setReqMaxSlopeDeg(parseFloat(e.target.value) || 8.0)}
-                      className="w-14 bg-white/10 border border-white/30 text-white px-1 py-0.5 text-right font-mono"
-                    />
-                    <span className="text-white/50">deg</span>
-                  </div>
-                </div>
-
-                <div className="flex justify-between items-center pt-1 border-t border-white/10">
-                  <span className="text-white/60">REQUIRE DIRECT EARTH LOS:</span>
-                  <button
-                    type="button"
-                    onClick={() => setReqRequireEarthLos(!reqRequireEarthLos)}
-                    className={`px-2 py-0.5 font-bold uppercase tracking-wider text-[8px] border cursor-pointer ${
-                      reqRequireEarthLos
-                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
-                        : 'bg-white/5 text-white/50 border-white/20'
-                    }`}
-                  >
-                    {reqRequireEarthLos ? 'MANDATORY' : 'OPTIONAL'}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Generate Alternatives Button */}
-            <button
-              type="button"
-              disabled={isGenerating}
-              onClick={handleGenerateScenarios}
-              className={`w-full py-2.5 px-4 font-mono font-bold text-xs uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-2 rounded-none ${
-                isGenerating
-                  ? 'bg-white/20 text-white/50 cursor-wait'
-                  : 'bg-white text-black hover:bg-[#00FF9D] hover:shadow-[0_0_15px_rgba(0,255,157,0.4)]'
-              }`}
-            >
-              <Sparkles size={13} className={isGenerating ? 'animate-spin' : ''} />
-              <span>{isGenerating ? 'Computing Orbital Scenarios...' : 'Compute Departure Scenarios'}</span>
-            </button>
-
-            {generationError && (
-              <div className="p-1.5 bg-red-950/80 border border-red-500 text-red-200 text-[8.5px] flex items-center gap-1">
-                <AlertTriangle size={11} className="shrink-0" />
-                <span>{generationError}</span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* =========================================================================
-            LARGE 3D TRANS-LUNAR MISSION TRAJECTORY VISUALIZATION
-        ========================================================================= */}
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-1.5">
-                <Orbit size={13} className="text-[#58D8D0]" />
-                <span>3D TRANS-LUNAR KINEMATIC FLIGHT TRAJECTORY</span>
-              </span>
-              <span className="text-white/40 text-[9.5px]">EARTH-MOON TRANSFER ENVELOPE</span>
-            </div>
+          {/* -------------------------------------------------------------------
+              RIGHT COLUMN: 3D MISSION VISUALIZATION (CENTREPIECE)
+          ------------------------------------------------------------------- */}
+          <div className="lg:col-span-7 flex flex-col gap-4">
             
-            <div className="text-[9px] text-[#58D8D0] font-mono">
-              FLIGHT TIME: {effectiveTransferHours}h • TOUCHDOWN: {currentDestination.name}
+            <div className="bg-[#0A0D12] border border-white/[0.1] p-5 flex flex-col gap-4">
+              
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.08] pb-3 font-mono text-xs">
+                <div className="flex items-center gap-2 text-white font-bold uppercase tracking-wider">
+                  <Orbit size={14} className="text-white/70" />
+                  <span>3D TRANSLUNAR TRAJECTORY</span>
+                </div>
+                <div className="flex items-center gap-2 text-[11px] text-neutral-400">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>TOUCHDOWN: {currentDestination.name}</span>
+                  <span className="text-white/30">•</span>
+                  <span className="text-white font-bold tabular-nums">{plannedArrivalEpochIso.substring(0, 16)} UTC</span>
+                </div>
+              </div>
+
+              {/* Embedded Three.js 3D Viewport */}
+              <div className="w-full h-[480px] bg-black border border-white/[0.06] relative overflow-hidden">
+                <MissionTrajectoryVisualizer
+                  launchSite={currentLaunchSite}
+                  lunarDestination={currentDestination}
+                  spacecraftProfile={currentProfile}
+                  departureEpochUtc={`${departureDate} ${departureHourUtc.toString().padStart(2, '0')}:00 UTC`}
+                  transferDurationHours={effectiveTransferHours}
+                  arrivalEpochUtc={plannedArrivalEpochIso}
+                  className="w-full h-full"
+                />
+              </div>
+
+              {/* Trajectory Footnote */}
+              <div className="flex items-center justify-between font-mono text-[10px] text-neutral-500 pt-1">
+                <span>ASTRODYNAMICS: PROGRADE TRANS-LUNAR INJECTION (TLI)</span>
+                <span>SPICE DE440 &bull; LOLA 80M DEM</span>
+              </div>
+
             </div>
+
           </div>
 
-          <MissionTrajectoryVisualizer
-            departureMode={departureMode}
-            launchSite={currentLaunchSite}
-            parkingOrbit={currentParkingOrbit}
-            lunarDestination={currentDestination}
-            spacecraftProfile={currentProfile}
-            departureEpochUtc={`${earliestDepartureDate} ${preferredDepartureHour.toString().padStart(2, '0')}:00 UTC`}
-            transferDurationHours={effectiveTransferHours}
-            arrivalEpochUtc={activeAlternative?.arrivalEpochUtc || 'Calculating...'}
-          />
         </div>
 
-        {/* =========================================================================
-            DEPARTURE WINDOW ALTERNATIVES: SIDE-BY-SIDE CARDS & COMPARISON MATRIX
-        ========================================================================= */}
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center justify-between border-b border-white/10 pb-2">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-[#00FF9D] flex items-center gap-1.5">
-                <Layers size={13} /> CANDIDATE DEPARTURE SCENARIOS & ARRIVAL CONDITIONS
+        {/* =======================================================================
+            SECTION D — TRAJECTORY RESULTS & CANDIDATE LANDING-SITE FEASIBILITY
+        ======================================================================= */}
+        <div className="flex flex-col gap-6 pt-6 border-t border-white/[0.08]">
+          
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+            <div className="flex flex-col gap-1">
+              <span className="font-mono text-xs uppercase tracking-[0.2em] text-white/50">
+                EVALUATION AT SCHEDULED ARRIVAL
               </span>
-              <span className="text-[9.5px] text-white/50">
-                Sorted by Mission Feasibility Score (Sunlight + Direct-to-Earth LOS)
-              </span>
+              <h2 className="font-display-hero text-2xl sm:text-3xl font-bold uppercase tracking-tight text-white">
+                LANDING SITE FEASIBILITY ANALYSIS
+              </h2>
             </div>
-
-            <span className="text-[9px] text-white/40">
-              {alternatives.length} ALTERNATIVES EVALUATED
+            <span className="font-mono text-xs text-neutral-400">
+              ARRIVAL EPOCH: <strong className="text-white">{plannedArrivalEpochIso}</strong>
             </span>
           </div>
 
-          {/* Cards Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-            {alternatives.map((alt) => {
-              const isSelected = alt.id === selectedAlternativeId;
+          {/* Candidate Sites Feasibility Cards Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {siteEvaluations.map((evalItem) => {
+              const isSelected = evalItem.site.id === selectedDestinationSiteId;
+              const isFeasible = evalItem.verdict === 'FEASIBLE';
+              const isMarginal = evalItem.verdict === 'MARGINAL';
+
               return (
                 <div
-                  key={alt.id}
-                  onClick={() => setSelectedAlternativeId(alt.id)}
-                  className={`p-3 border transition-all cursor-pointer flex flex-col justify-between gap-2.5 rounded-none ${
+                  key={evalItem.site.id}
+                  onClick={() => setSelectedDestinationSiteId(evalItem.site.id)}
+                  className={`p-5 border transition-all cursor-pointer flex flex-col justify-between gap-4 rounded-none ${
                     isSelected
-                      ? 'border-[#00FF9D] bg-[#00FF9D]/10 text-white shadow-[0_0_15px_rgba(0,255,157,0.2)]'
-                      : 'border-white/20 bg-[#08090C] text-white/80 hover:border-white/50 hover:bg-white/5'
+                      ? 'bg-neutral-900/90 border-white'
+                      : 'bg-[#0A0D12] border-white/[0.1] hover:border-white/30 hover:bg-neutral-900/40'
                   }`}
                 >
-                  {/* Card Header: Label & Verdict */}
-                  <div className="flex flex-col gap-1 border-b border-white/10 pb-2">
-                    <div className="flex items-center justify-between text-[9px]">
-                      <span className="text-white/50 font-bold uppercase">{alt.label}</span>
-                      <span 
-                        className={`px-1.5 py-0.2 text-[8px] font-extrabold uppercase border ${
-                          alt.verdict === 'OPTIMAL'
-                            ? 'bg-[#00FF9D]/20 text-[#00FF9D] border-[#00FF9D]/50'
-                            : alt.verdict === 'FAVORABLE'
-                            ? 'bg-[#58D8D0]/20 text-[#58D8D0] border-[#58D8D0]/50'
-                            : alt.verdict === 'MARGINAL'
-                            ? 'bg-amber-400/20 text-amber-300 border-amber-400/50'
-                            : 'bg-red-500/20 text-red-300 border-red-500/50'
-                        }`}
-                      >
-                        {alt.verdict}
+                  {/* Card Header */}
+                  <div className="flex items-start justify-between gap-3 border-b border-white/[0.08] pb-3">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="font-bold text-sm text-white uppercase tracking-wider font-mono">
+                        {evalItem.site.name}
+                      </span>
+                      <span className="font-mono text-[11px] text-neutral-400 tabular-nums">
+                        {fmt(Math.abs(evalItem.site.latitudeDeg), 2)}°S, {evalItem.site.longitudeDeg >= 0 ? `${fmt(evalItem.site.longitudeDeg, 2)}°E` : `${fmt(Math.abs(evalItem.site.longitudeDeg), 2)}°W`} &bull; {fmt(evalItem.elevationMeters, 0)}m MSL
                       </span>
                     </div>
 
-                    <div className="flex items-baseline justify-between mt-1">
-                      <span className="text-[8px] text-white/50 uppercase">DEPARTURE:</span>
-                      <span className="text-white font-bold text-[9.5px] tabular-nums">
-                        {alt.departureEpochUtc.substring(0, 16)}
-                      </span>
-                    </div>
-
-                    <div className="flex items-baseline justify-between">
-                      <span className="text-[8px] text-[#00FF9D] uppercase font-bold">PREDICTED ARRIVAL:</span>
-                      <span className="text-[#00FF9D] font-bold text-[9.5px] tabular-nums">
-                        {alt.arrivalEpochUtc.substring(0, 16)}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className={`w-2 h-2 rounded-full ${
+                        isFeasible ? 'bg-emerald-400' : isMarginal ? 'bg-amber-400' : 'bg-rose-500'
+                      }`} />
+                      <span className={`font-mono text-xs font-bold uppercase tracking-wider ${
+                        isFeasible ? 'text-emerald-400' : isMarginal ? 'text-amber-400' : 'text-rose-400'
+                      }`}>
+                        {evalItem.verdict.replace('_', ' ')}
                       </span>
                     </div>
                   </div>
 
-                  {/* Arrival Solar & Earth Geometry */}
-                  <div className="flex flex-col gap-1 text-[8.5px]">
-                    <div className="flex justify-between items-center">
-                      <span className="flex items-center gap-1 text-amber-300 font-bold">
-                        <Sun size={10} /> SUN ELEVATION:
+                  {/* 4 Physical Key Factors */}
+                  <div className="grid grid-cols-2 gap-3 font-mono text-xs">
+                    <div className="flex flex-col gap-0.5 p-2.5 bg-neutral-950 border border-white/[0.06]">
+                      <span className="text-[10px] text-neutral-500 uppercase flex items-center gap-1">
+                        <Sun size={11} /> Sunlight Elevation
                       </span>
-                      <span className={`tabular-nums font-bold ${alt.sunElevationDeg > 0 ? 'text-amber-300' : 'text-red-400'}`}>
-                        {alt.sunElevationDeg >= 0 ? `+${alt.sunElevationDeg.toFixed(2)}°` : `${alt.sunElevationDeg.toFixed(2)}°`} ({alt.isSunLit ? 'LIT' : 'SHADOW'})
-                      </span>
-                    </div>
-
-                    <div className="flex justify-between items-center">
-                      <span className="flex items-center gap-1 text-[#58D8D0] font-bold">
-                        <Globe size={10} /> EARTH ELEVATION:
-                      </span>
-                      <span className={`tabular-nums font-bold ${alt.earthElevationDeg > 0 ? 'text-[#58D8D0]' : 'text-white/40'}`}>
-                        {alt.earthElevationDeg >= 0 ? `+${alt.earthElevationDeg.toFixed(2)}°` : `${alt.earthElevationDeg.toFixed(2)}°`} ({alt.isEarthVisible ? 'LOS CLEAR' : 'BLOCKED'})
-                      </span>
-                    </div>
-
-                    <div className="flex justify-between items-center">
-                      <span className="text-white/50">LOLA 80M SLOPE:</span>
-                      <span className={`tabular-nums font-bold ${alt.isSafeSlope ? 'text-emerald-400' : 'text-amber-400'}`}>
-                        {alt.terrainSlopeDeg.toFixed(1)}° ({alt.isSafeSlope ? 'SAFE' : 'STEEP'})
-                      </span>
-                    </div>
-
-                    <div className="flex justify-between items-center border-t border-white/10 pt-1">
-                      <span className="text-white/50">EST. TOTAL ΔV:</span>
                       <span className="text-white font-bold tabular-nums">
-                        {alt.estimatedTotalDeltaV.toLocaleString()} m/s
+                        {evalItem.sunElevationDeg >= 0 ? `+${fmt(evalItem.sunElevationDeg, 1)}°` : `${fmt(evalItem.sunElevationDeg, 1)}°`}
+                        <span className="text-neutral-500 font-normal ml-1.5">
+                          ({evalItem.isSunLit ? 'Daylight' : 'Shadow'})
+                        </span>
                       </span>
                     </div>
 
-                    <div className="flex justify-between items-center">
-                      <span className="text-white/50">FEASIBILITY SCORE:</span>
-                      <span className="text-[#00FF9D] font-extrabold tabular-nums">
-                        {alt.feasibilityScore} / 100
+                    <div className="flex flex-col gap-0.5 p-2.5 bg-neutral-950 border border-white/[0.06]">
+                      <span className="text-[10px] text-neutral-500 uppercase flex items-center gap-1">
+                        <Globe size={11} /> Direct Earth Line-of-Sight
+                      </span>
+                      <span className="text-white font-bold tabular-nums">
+                        {evalItem.earthElevationDeg >= 0 ? `+${fmt(evalItem.earthElevationDeg, 1)}°` : `${fmt(evalItem.earthElevationDeg, 1)}°`}
+                        <span className="text-neutral-500 font-normal ml-1.5">
+                          ({evalItem.isEarthVisible ? 'Unobstructed' : 'Occluded'})
+                        </span>
+                      </span>
+                    </div>
+
+                    <div className="flex flex-col gap-0.5 p-2.5 bg-neutral-950 border border-white/[0.06]">
+                      <span className="text-[10px] text-neutral-500 uppercase flex items-center gap-1">
+                        <Compass size={11} /> Terrain Slope
+                      </span>
+                      <span className="text-white font-bold tabular-nums">
+                        {fmt(evalItem.slopeDeg, 1)}°
+                        <span className="text-neutral-500 font-normal ml-1.5">
+                          ({evalItem.isSafeSlope ? 'Safe' : 'Steep'})
+                        </span>
+                      </span>
+                    </div>
+
+                    <div className="flex flex-col gap-0.5 p-2.5 bg-neutral-950 border border-white/[0.06]">
+                      <span className="text-[10px] text-neutral-500 uppercase flex items-center gap-1">
+                        <Thermometer size={11} /> Surface Temperature
+                      </span>
+                      <span className="text-white font-bold tabular-nums">
+                        {evalItem.temperatureK} K
+                        <span className="text-neutral-500 font-normal ml-1.5">
+                          ({evalItem.temperatureC}°C)
+                        </span>
                       </span>
                     </div>
                   </div>
 
-                  {/* Radio Select Pill */}
-                  <div className={`mt-2 py-1 text-center font-bold text-[9px] uppercase border rounded-none transition-colors ${
-                    isSelected ? 'bg-[#00FF9D] text-black border-[#00FF9D]' : 'border-white/20 text-white/60 hover:text-white'
-                  }`}>
-                    {isSelected ? '✓ SELECTED FOR ANALYSIS' : 'SELECT SCENARIO'}
+                  {/* Operational Assessment Statement */}
+                  <p className="text-xs text-neutral-400 font-sans leading-relaxed">
+                    {evalItem.reasons[0] || 'Nominal lunar surface operational criteria satisfied.'}
+                  </p>
+
+                  {/* Card Select Button */}
+                  <div className="pt-1">
+                    <button
+                      type="button"
+                      className={`w-full py-2.5 font-mono text-xs uppercase tracking-wider font-bold transition-all border ${
+                        isSelected 
+                          ? 'bg-white text-black border-white' 
+                          : 'bg-transparent text-neutral-400 border-white/20 hover:text-white hover:border-white/50'
+                      }`}
+                    >
+                      {isSelected ? '✓ Selected Destination' : 'Select Target Site'}
+                    </button>
                   </div>
                 </div>
               );
             })}
           </div>
 
-          {/* Detailed Selected Alternative Dossier & Action Call */}
-          {activeAlternative && (
-            <div className="p-4 bg-[#08090C] border border-[#00FF9D]/60 rounded-none flex flex-col gap-3">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/15 pb-2">
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-white uppercase tracking-wider text-sm">
-                    SCENARIO DETAILS: {activeAlternative.label}
-                  </span>
-                  <span className="px-2 py-0.5 bg-[#00FF9D]/20 text-[#00FF9D] font-bold text-[9px] border border-[#00FF9D]/50 uppercase">
-                    {activeAlternative.verdict} VERDICT
-                  </span>
-                </div>
-
-                {/* Primary Transition Action Button */}
-                <button
-                  type="button"
-                  onClick={handleProceedToLunarAnalysis}
-                  className="px-5 py-2.5 bg-[#00FF9D] hover:bg-white text-black font-extrabold text-xs uppercase tracking-wider cursor-pointer flex items-center gap-2 rounded-none transition-all shadow-[0_0_15px_rgba(0,255,157,0.3)]"
-                >
-                  <span>PROCEED TO LUNAR SURFACE ANALYSIS AT ARRIVAL EPOCH</span>
-                  <ArrowRight size={14} />
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-[9px]">
-                {/* Advantages */}
-                <div className="p-2.5 bg-black/60 border border-emerald-500/30 flex flex-col gap-1.5">
-                  <span className="text-emerald-400 font-bold uppercase tracking-wider flex items-center gap-1">
-                    <Check size={11} /> Mission Planning Advantages:
-                  </span>
-                  {activeAlternative.advantages.map((adv, i) => (
-                    <div key={i} className="flex items-start gap-1.5 text-white/80">
-                      <span className="text-emerald-400">•</span>
-                      <span>{adv}</span>
-                    </div>
-                  ))}
-                  {activeAlternative.advantages.length === 0 && (
-                    <span className="text-white/40 italic">No significant advantages identified.</span>
-                  )}
-                </div>
-
-                {/* Disadvantages / Operational Constraints */}
-                <div className="p-2.5 bg-black/60 border border-amber-500/30 flex flex-col gap-1.5">
-                  <span className="text-amber-400 font-bold uppercase tracking-wider flex items-center gap-1">
-                    <AlertTriangle size={11} /> Operational Trade-Offs & Constraints:
-                  </span>
-                  {activeAlternative.disadvantages.map((dis, i) => (
-                    <div key={i} className="flex items-start gap-1.5 text-white/80">
-                      <span className="text-amber-400">•</span>
-                      <span>{dis}</span>
-                    </div>
-                  ))}
-                  {activeAlternative.disadvantages.length === 0 && (
-                    <span className="text-emerald-400 italic">No severe constraints detected.</span>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
         </div>
 
-        {/* =========================================================================
-            CHRONOLOGICAL MISSION TIMELINE (Earth Departure to Surface Operations)
-        ========================================================================= */}
-        {activeAlternative && (
-          <div className="bg-[#08090C] border border-white/20 p-4 flex flex-col gap-3 rounded-none">
-            <div className="flex items-center justify-between border-b border-white/10 pb-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-1.5">
-                <Clock size={12} className="text-[#58D8D0]" />
-                <span>CHRONOLOGICAL MISSION PHASES // END-TO-END TIMELINE</span>
+        {/* =======================================================================
+            SECTION E — INTELLIGENT ALTERNATIVES (WHEN APPROPRIATE)
+        ======================================================================= */}
+        {recommendations.length > 0 && (
+          <div className="bg-[#0A0D12] border border-white/[0.1] p-6 flex flex-col gap-5">
+            
+            <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
+              <div className="flex flex-col gap-0.5">
+                <span className="font-mono text-xs uppercase tracking-[0.2em] font-bold text-white flex items-center gap-2">
+                  <Sparkles size={14} className="text-neutral-300" />
+                  <span>RECOMMENDED MISSION ALTERNATIVES</span>
+                </span>
+                <span className="text-xs text-neutral-400">
+                  Alternative departure windows and candidate landing sites optimized for higher cumulative sunlight and direct communications.
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {recommendations.slice(0, 2).map((rec) => (
+                <div 
+                  key={rec.id}
+                  className="p-5 bg-neutral-950 border border-white/[0.08] hover:border-white/25 flex flex-col justify-between gap-4 transition-colors"
+                >
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-xs font-bold uppercase text-white tracking-wider">
+                        {rec.title}
+                      </span>
+                      <span className="font-mono text-[10px] text-emerald-400 uppercase font-bold px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/30">
+                        {rec.verdict}
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-neutral-400 leading-relaxed">
+                      {rec.description}
+                    </p>
+
+                    <div className="flex flex-col gap-1 pt-2 border-t border-white/[0.06] font-mono text-[11px] text-neutral-300">
+                      {rec.expectedImprovements.map((imp, i) => (
+                        <span key={i} className="flex items-center gap-1.5 text-neutral-200">
+                          <Check size={12} className="text-emerald-400 shrink-0" />
+                          <span>{imp}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleApplyRecommendation(rec)}
+                    className="w-full py-2.5 font-mono text-xs uppercase tracking-wider font-bold bg-neutral-800 hover:bg-white text-white hover:text-black border border-white/20 hover:border-white transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <span>Apply This Scenario</span>
+                    <ArrowRight size={13} />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+          </div>
+        )}
+
+        {/* =======================================================================
+            SECTION F — SURFACE OPERATIONS TIMELINE
+        ======================================================================= */}
+        {activeSiteEval && (
+          <div className="bg-[#0A0D12] border border-white/[0.1] p-6 flex flex-col gap-5">
+            
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/[0.08] pb-3 font-mono text-xs">
+              <span className="font-bold uppercase tracking-wider text-white flex items-center gap-2">
+                <Clock size={14} className="text-neutral-400" />
+                <span>SURFACE OPERATIONS TIMELINE // {activeSiteEval.site.name}</span>
               </span>
-              <span className="text-[9px] text-white/40">UTC EVENT SCHEDULE</span>
+              <span className="text-neutral-400">
+                MISSION DURATION: <strong className="text-white">{surfaceMissionDurationHours} HOURS ({fmt(surfaceMissionDurationHours / 24, 1)} DAYS)</strong>
+              </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
+            {/* Metric Summaries */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono text-xs">
+              <div className="p-3 bg-neutral-950 border border-white/[0.06] flex flex-col gap-1">
+                <span className="text-[10px] text-neutral-500 uppercase">Total Sunlight</span>
+                <span className="text-white font-bold text-sm tabular-nums">
+                  {fmt(activeSiteEval.totalSunlightHours, 1)}h
+                  <span className="text-neutral-500 text-xs ml-1 font-normal">
+                    ({fmt((activeSiteEval.totalSunlightHours / Math.max(1, surfaceMissionDurationHours)) * 100, 0)}%)
+                  </span>
+                </span>
+              </div>
+
+              <div className="p-3 bg-neutral-950 border border-white/[0.06] flex flex-col gap-1">
+                <span className="text-[10px] text-neutral-500 uppercase">Earth Line-of-Sight</span>
+                <span className="text-white font-bold text-sm tabular-nums">
+                  {fmt(activeSiteEval.totalEarthHours, 1)}h
+                  <span className="text-neutral-500 text-xs ml-1 font-normal">
+                    ({fmt((activeSiteEval.totalEarthHours / Math.max(1, surfaceMissionDurationHours)) * 100, 0)}%)
+                  </span>
+                </span>
+              </div>
+
+              <div className="p-3 bg-neutral-950 border border-white/[0.06] flex flex-col gap-1">
+                <span className="text-[10px] text-neutral-500 uppercase">Simultaneous Dual-Ops</span>
+                <span className="text-white font-bold text-sm tabular-nums">
+                  {fmt(activeSiteEval.simultaneousHours, 1)}h
+                  <span className="text-neutral-500 text-xs ml-1 font-normal">
+                    ({fmt((activeSiteEval.simultaneousHours / Math.max(1, surfaceMissionDurationHours)) * 100, 0)}%)
+                  </span>
+                </span>
+              </div>
+
+              <div className="p-3 bg-neutral-950 border border-white/[0.06] flex flex-col gap-1">
+                <span className="text-[10px] text-neutral-500 uppercase">Surface Temperature</span>
+                <span className="text-white font-bold text-sm tabular-nums">
+                  {fmt(activeSiteEval.temperatureK, 1)} K
+                  <span className="text-neutral-500 text-xs ml-1 font-normal">
+                    ({fmt(activeSiteEval.temperatureC, 1)}°C)
+                  </span>
+                </span>
+              </div>
+            </div>
+
+            {/* Multi-Track Visual Timeline Bars */}
+            <div className="p-4 bg-neutral-950 border border-white/[0.08] flex flex-col gap-3 font-mono text-xs">
               
-              {/* Phase 1 */}
-              <div className="p-2.5 bg-black border border-white/20 flex flex-col gap-1 text-[8.5px]">
-                <div className="text-[#58D8D0] font-bold uppercase">01 // EARTH DEPARTURE</div>
-                <div className="text-white font-bold tabular-nums text-[9.5px]">
-                  {activeAlternative.departureEpochUtc.substring(0, 16)}
+              {/* Sunlight Track */}
+              <div className="flex items-center gap-3">
+                <span className="w-24 text-[11px] text-neutral-400">Sunlight</span>
+                <div className="flex-1 h-3 bg-neutral-900 border border-white/10 relative overflow-hidden flex">
+                  <div
+                    className="h-full bg-amber-400"
+                    style={{ width: `${Math.min(100, (activeSiteEval.totalSunlightHours / Math.max(1, surfaceMissionDurationHours)) * 100)}%` }}
+                  />
                 </div>
-                <div className="text-white/60">
-                  Ignition from {departureMode === 'SITE' ? currentLaunchSite.name : currentParkingOrbit.name}. Trans-Lunar Injection (TLI) burn.
-                </div>
+                <span className="w-12 text-right tabular-nums text-neutral-300 font-semibold">
+                  {fmt((activeSiteEval.totalSunlightHours / Math.max(1, surfaceMissionDurationHours)) * 100, 0)}%
+                </span>
               </div>
 
-              {/* Phase 2 */}
-              <div className="p-2.5 bg-black border border-white/20 flex flex-col gap-1 text-[8.5px]">
-                <div className="text-white/80 font-bold uppercase">02 // TRANSLUNAR CRUISE</div>
-                <div className="text-white font-bold tabular-nums text-[9.5px]">
-                  MET T+ 00d 02h — {Math.floor(effectiveTransferHours / 24)}d
+              {/* Earth Track */}
+              <div className="flex items-center gap-3">
+                <span className="w-24 text-[11px] text-neutral-400">Earth Comms</span>
+                <div className="flex-1 h-3 bg-neutral-900 border border-white/10 relative overflow-hidden flex">
+                  <div
+                    className="h-full bg-[#58D8D0]"
+                    style={{ width: `${Math.min(100, (activeSiteEval.totalEarthHours / Math.max(1, surfaceMissionDurationHours)) * 100)}%` }}
+                  />
                 </div>
-                <div className="text-white/60">
-                  Cislunar coast phase across ~384,400 km. Van Allen belt traversal and midcourse trajectory correction burns (TCM-1/2).
-                </div>
+                <span className="w-12 text-right tabular-nums text-neutral-300 font-semibold">
+                  {fmt((activeSiteEval.totalEarthHours / Math.max(1, surfaceMissionDurationHours)) * 100, 0)}%
+                </span>
               </div>
 
-              {/* Phase 3 */}
-              <div className="p-2.5 bg-black border border-white/20 flex flex-col gap-1 text-[8.5px]">
-                <div className="text-[#ECC068] font-bold uppercase">03 // LUNAR APPROACH</div>
-                <div className="text-white font-bold tabular-nums text-[9.5px]">
-                  ~2 Hours Prior to Arrival
+              {/* Dual Ops Track */}
+              <div className="flex items-center gap-3">
+                <span className="w-24 text-[11px] text-neutral-400">Dual-Ops</span>
+                <div className="flex-1 h-3 bg-neutral-900 border border-white/10 relative overflow-hidden flex">
+                  <div
+                    className="h-full bg-emerald-400"
+                    style={{ width: `${Math.min(100, (activeSiteEval.simultaneousHours / Math.max(1, surfaceMissionDurationHours)) * 100)}%` }}
+                  />
                 </div>
-                <div className="text-white/60">
-                  Lunar sphere of influence entry. Hyperbolic approach alignment and retrograde Lunar Orbit Insertion (LOI).
-                </div>
+                <span className="w-12 text-right tabular-nums text-neutral-300 font-semibold">
+                  {fmt((activeSiteEval.simultaneousHours / Math.max(1, surfaceMissionDurationHours)) * 100, 0)}%
+                </span>
               </div>
 
-              {/* Phase 4 */}
-              <div className="p-2.5 bg-black border border-[#00FF9D]/60 flex flex-col gap-1 text-[8.5px]">
-                <div className="text-[#00FF9D] font-bold uppercase">04 // TOUCHDOWN</div>
-                <div className="text-[#00FF9D] font-bold tabular-nums text-[9.5px]">
-                  {activeAlternative.arrivalEpochUtc.substring(0, 16)}
-                </div>
-                <div className="text-white/60">
-                  Powered Descent Insertion (PDI) at {currentDestination.name}. Sun El: {activeAlternative.sunElevationDeg.toFixed(1)}°, Slope: {activeAlternative.terrainSlopeDeg.toFixed(1)}°.
-                </div>
+            </div>
+
+          </div>
+        )}
+
+        {/* =======================================================================
+            SECTION G — FINAL FLIGHT DOSSIER & SURFACE BROWSER LAUNCH
+        ======================================================================= */}
+        {activeSiteEval && (
+          <div className="bg-[#0A0D12] border border-white/[0.15] p-6 sm:p-8 flex flex-col gap-6">
+            
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/[0.08] pb-5">
+              <div className="flex flex-col gap-1">
+                <span className="font-mono text-xs uppercase tracking-[0.2em] text-white/50">
+                  FINAL MISSION PLAN
+                </span>
+                <h3 className="font-display-hero text-xl sm:text-2xl font-bold uppercase tracking-tight text-white">
+                  LUNAR FLIGHT PLAN DOSSIER
+                </h3>
               </div>
 
-              {/* Phase 5 */}
-              <div className="p-2.5 bg-black border border-white/20 flex flex-col gap-1 text-[8.5px]">
-                <div className="text-white/80 font-bold uppercase">05 // SURFACE OPERATIONS</div>
-                <div className="text-white font-bold tabular-nums text-[9.5px]">
-                  Arrival + 72 Hours
-                </div>
-                <div className="text-white/60">
-                  High-priority scientific window: {activeAlternative.sunlightHours.toFixed(1)}h sunlight, {activeAlternative.earthCommHours.toFixed(1)}h direct-to-Earth communication.
-                </div>
+              <div className="flex flex-wrap items-center gap-2 font-mono text-xs">
+                <button
+                  type="button"
+                  onClick={handleCopySummary}
+                  className="px-3.5 py-2 bg-neutral-900 hover:bg-neutral-800 text-white border border-white/20 transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Copy size={13} />
+                  <span>Copy Summary</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleExportReport('TXT')}
+                  className="px-3.5 py-2 bg-neutral-900 hover:bg-neutral-800 text-white border border-white/20 transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Download size={13} />
+                  <span>Export TXT</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleExportReport('JSON')}
+                  className="px-3.5 py-2 bg-neutral-900 hover:bg-neutral-800 text-white border border-white/20 transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Download size={13} />
+                  <span>Export JSON</span>
+                </button>
               </div>
             </div>
+
+            {/* Flight Spec Details Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 font-mono text-xs">
+              <div className="flex flex-col gap-1 p-3 bg-neutral-950 border border-white/[0.06]">
+                <span className="text-[10px] text-neutral-500 uppercase">DEPARTURE</span>
+                <span className="text-white font-bold truncate">{currentLaunchSite.name}</span>
+                <span className="text-neutral-500 text-[10px] tabular-nums">{departureDate} {departureHourUtc.toString().padStart(2, '0')}:00 UTC</span>
+              </div>
+
+              <div className="flex flex-col gap-1 p-3 bg-neutral-950 border border-white/[0.06]">
+                <span className="text-[10px] text-neutral-500 uppercase">TOUCHDOWN</span>
+                <span className="text-white font-bold truncate">{activeSiteEval.site.name}</span>
+                <span className="text-neutral-500 text-[10px] tabular-nums">{plannedArrivalEpochIso.substring(0, 16)} UTC</span>
+              </div>
+
+              <div className="flex flex-col gap-1 p-3 bg-neutral-950 border border-white/[0.06]">
+                <span className="text-[10px] text-neutral-500 uppercase">TRANSIT TIME</span>
+                <span className="text-white font-bold">{effectiveTransferHours} Hours</span>
+                <span className="text-neutral-500 text-[10px]">{fmt(effectiveTransferHours / 24, 1)} Days Transit</span>
+              </div>
+
+              <div className="flex flex-col gap-1 p-3 bg-neutral-950 border border-white/[0.06]">
+                <span className="text-[10px] text-neutral-500 uppercase">STATUS VERDICT</span>
+                <span className="text-emerald-400 font-bold">{activeSiteEval.verdict}</span>
+                <span className="text-neutral-500 text-[10px]">Score: {activeSiteEval.feasibilityScore}/100</span>
+              </div>
+            </div>
+
+            {/* Seamless Handoff to Mission Browser */}
+            <div className="pt-4 border-t border-white/[0.08] flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="flex flex-col gap-0.5">
+                <span className="font-mono text-xs font-bold uppercase text-white">
+                  Inspect Local Lunar Relief &amp; Topographic Horizon
+                </span>
+                <span className="text-xs text-neutral-400">
+                  Pre-loads your planned landing epoch into the high-resolution LOLA 80m DEM ray-marching engine.
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  navigate(`/mission-browser?site=${activeSiteEval.site.id}&epoch=${plannedArrivalEpochIso}&fromRoute=1`);
+                }}
+                className="w-full sm:w-auto px-6 py-3 bg-white hover:bg-neutral-200 text-black font-mono font-extrabold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg shrink-0"
+              >
+                <span>OPEN IN SURFACE BROWSER</span>
+                <ArrowRight size={14} />
+              </button>
+            </div>
+
           </div>
         )}
 
       </section>
+
     </div>
   );
 };

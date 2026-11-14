@@ -1057,4 +1057,78 @@ export const lunarApi = {
       },
     ];
   },
+
+  /**
+   * Time-series ephemeris, illumination, and radiative-equilibrium thermal temperature calculation
+   */
+  async getSiteSeries(params: {
+    site: { latitudeDeg: number; longitudeDeg: number; elevationMeters?: number };
+    startTimeUtc: string;
+    endTimeUtc: string;
+    stepSeconds?: number;
+    include?: Array<'moon' | 'sunlight' | 'temperature'>;
+    thermal?: { nightTemperatureK?: number; bondAlbedo?: number; emissivity?: number };
+  }): Promise<SiteSeriesResponse> {
+    return apiFetch<SiteSeriesResponse>('/series/site', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        site: {
+          latitudeDeg: params.site.latitudeDeg,
+          longitudeDeg: params.site.longitudeDeg,
+          elevationMeters: params.site.elevationMeters ?? 0,
+        },
+        startTimeUtc: params.startTimeUtc,
+        endTimeUtc: params.endTimeUtc,
+        stepSeconds: params.stepSeconds ?? 3600,
+        include: params.include ?? ['sunlight', 'temperature'],
+        thermal: params.thermal ?? { nightTemperatureK: 40 },
+      }),
+    });
+  },
 };
+
+export interface SiteSeriesResponse {
+  siteCoords: { latitudeDeg: number; longitudeDeg: number; elevationMeters?: number };
+  interval: {
+    startUtc: string;
+    endUtc: string;
+    stepSeconds: number;
+    sampleCount: number;
+  };
+  included: string[];
+  series: Array<{
+    epochUtc: string;
+    sunlight?: {
+      sunAzimuthDeg: number;
+      sunElevationDeg: number;
+      terrainHorizonDeg: number;
+      clearanceDeg: number;
+      incidenceAngleDeg: number;
+      illuminationStatus: string;
+      isDirectlyIlluminated: boolean;
+    };
+    temperature?: {
+      surfaceTemperatureK: number;
+      surfaceTemperatureC: number;
+      solarFluxWm2: number;
+      regime: 'SUNLIT' | 'NIGHT_OR_SHADOW';
+    };
+  }>;
+  summary: {
+    sunlit?: {
+      litSampleCount: number;
+      litPercentage: number;
+      longestContinuousSunlightHours: number;
+      longestContinuousDarknessHours: number;
+    };
+    temperature?: {
+      minK: number;
+      maxK: number;
+      meanK: number;
+      minC: number;
+      maxC: number;
+      meanC: number;
+    };
+  };
+}

@@ -25,11 +25,15 @@ const AppContent: React.FC = () => {
   const renderCurrentPage = () => {
     switch (currentPath) {
       case '/':
+      case '/space-observer':
         return <OverviewPage />;
       case '/mission-browser':
       case '/trade-offs':
       case '/site-decision':
       case '/research-lab':
+      case '/scenario-comparison':
+      case '/scientific-lab':
+      case '/system-diagnostics':
         return <MissionBrowserPage />;
       case '/route-planner':
       case '/launch-planner':

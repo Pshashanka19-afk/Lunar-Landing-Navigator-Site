@@ -173,8 +173,17 @@ export const MiniLunarMapSelector: React.FC<MiniLunarMapSelectorProps> = ({
                   </div>
 
                   <div className="flex items-center justify-between text-[8px] text-white/50 tabular-nums">
-                    <span>{Math.abs(site.latitudeDeg).toFixed(2)}°S, {site.longitudeDeg >= 0 ? `${site.longitudeDeg.toFixed(2)}°E` : `${Math.abs(site.longitudeDeg).toFixed(2)}°W`}</span>
-                    <span>{site.elevationMeters >= 0 ? `+${site.elevationMeters.toFixed(0)}m` : `${site.elevationMeters.toFixed(0)}m`}</span>
+                    <span>
+                      {typeof site.latitudeDeg === 'number' ? Math.abs(site.latitudeDeg).toFixed(2) : '0.00'}°S,{' '}
+                      {typeof site.longitudeDeg === 'number'
+                        ? (site.longitudeDeg >= 0 ? `${site.longitudeDeg.toFixed(2)}°E` : `${Math.abs(site.longitudeDeg).toFixed(2)}°W`)
+                        : '0.00°E'}
+                    </span>
+                    <span>
+                      {typeof site.elevationMeters === 'number'
+                        ? `${site.elevationMeters >= 0 ? '+' : ''}${site.elevationMeters.toFixed(0)}m`
+                        : '0m'}
+                    </span>
                   </div>
                 </div>
               );
@@ -254,8 +263,11 @@ export const MiniLunarMapSelector: React.FC<MiniLunarMapSelectorProps> = ({
           {/* Active Target Banner */}
           <div className="p-1.5 bg-black/80 border border-white/15 rounded-none flex items-center justify-between text-[8.5px]">
             <span className="text-white/60">SELECTED TARGET:</span>
-            <span className="text-[#00FF9D] font-bold uppercase">{selectedSite.name}</span>
-            <span className="text-white/40 tabular-nums">({Math.abs(selectedSite.latitudeDeg).toFixed(2)}°S, {selectedSite.longitudeDeg.toFixed(2)}°E)</span>
+            <span className="text-[#00FF9D] font-bold uppercase">{selectedSite?.name || 'Site'}</span>
+            <span className="text-white/40 tabular-nums">
+              ({typeof selectedSite?.latitudeDeg === 'number' ? Math.abs(selectedSite.latitudeDeg).toFixed(2) : '0.00'}°S,{' '}
+               {typeof selectedSite?.longitudeDeg === 'number' ? selectedSite.longitudeDeg.toFixed(2) : '0.00'}°E)
+            </span>
           </div>
         </div>
       </div>

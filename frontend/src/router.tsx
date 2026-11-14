@@ -2,16 +2,23 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 
 export type RoutePath = 
   | '/'
+  | '/space-observer'
   | '/mission-browser'
-  | '/route-planner';
+  | '/mission-planner'
+  | '/route-planner'
+  | '/scenario-comparison'
+  | '/scientific-lab'
+  | '/system-diagnostics';
 
 interface RouterContextType {
   currentPath: string;
+  search: string;
   navigate: (to: string) => void;
 }
 
 const RouterContext = createContext<RouterContextType>({
   currentPath: '/',
+  search: '',
   navigate: () => {},
 });
 
@@ -34,16 +41,26 @@ export const RouterProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return '/';
   });
 
+  const [search, setSearch] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return window.location.search;
+    }
+    return '';
+  });
+
   const navigate = (to: string) => {
     const target = normalizePath(to);
+    const searchPart = to.includes('?') ? '?' + to.split('?')[1] : '';
     window.history.pushState({}, '', to);
     setCurrentPath(target);
+    setSearch(searchPart);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   useEffect(() => {
     const handlePopState = () => {
       setCurrentPath(normalizePath(window.location.pathname));
+      setSearch(window.location.search);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
@@ -52,7 +69,7 @@ export const RouterProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }, []);
 
   return (
-    <RouterContext.Provider value={{ currentPath, navigate }}>
+    <RouterContext.Provider value={{ currentPath, search, navigate }}>
       {children}
     </RouterContext.Provider>
   );

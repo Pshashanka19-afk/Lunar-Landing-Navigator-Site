@@ -80,7 +80,10 @@ export const Header: React.FC = () => {
         <div className="hidden lg:flex items-center gap-7">
           <nav className="flex items-center gap-6">
             {desktopNavItems.map((item) => {
-              const isActive = currentPath === item.path;
+              const isActive =
+                item.path === '/'
+                  ? currentPath === '/' || currentPath === '' || currentPath === '/space-observer'
+                  : currentPath === '/route-planner' || currentPath === '/mission-planner' || currentPath === '/launch-planner';
               return (
                 <Link
                   key={item.path}
@@ -100,13 +103,9 @@ export const Header: React.FC = () => {
           {/* Mission Browser Primary Action Button */}
           <Link 
             href="/mission-browser"
-            className={`px-4 py-2 font-mono text-xs uppercase tracking-[0.22em] font-bold transition-all duration-300 flex items-center justify-center cursor-pointer border rounded-none ${
-              currentPath === '/mission-browser'
-                ? 'bg-white text-black border-white font-extrabold'
-                : 'bg-transparent text-white/80 hover:text-white border-white/30 hover:border-white hover:bg-white/5'
-            }`}
+            className="px-5 py-2 bg-white text-black font-mono text-xs uppercase tracking-[0.22em] font-extrabold hover:bg-white/90 transition-all duration-200 flex items-center justify-center cursor-pointer border border-white rounded-none shadow-[0_0_15px_rgba(255,255,255,0.15)] active:scale-[0.98]"
           >
-            <span className="font-bold">MISSION BROWSER</span>
+            <span className="font-extrabold">MISSION BROWSER</span>
           </Link>
         </div>
 
@@ -172,7 +171,12 @@ export const Header: React.FC = () => {
                 {/* Nav Links */}
                 <nav className="flex flex-col">
                   {allNavItems.map((item) => {
-                    const isActive = currentPath === item.path;
+                    const isActive =
+                      item.path === '/'
+                        ? currentPath === '/' || currentPath === '' || currentPath === '/space-observer'
+                        : item.path === '/route-planner'
+                        ? currentPath === '/route-planner' || currentPath === '/mission-planner' || currentPath === '/launch-planner'
+                        : currentPath === item.path;
                     return (
                       <Link
                         key={item.path}
@@ -195,7 +199,7 @@ export const Header: React.FC = () => {
                 <Link
                   href="/mission-browser"
                   onClick={() => setMobileMenuOpen(false)}
-                  className="w-full py-3.5 bg-transparent border border-white hover:bg-white text-white hover:text-black font-mono text-xs uppercase tracking-[0.22em] font-bold flex items-center justify-center transition-all duration-300 rounded-none"
+                  className="w-full py-3.5 bg-white text-black font-mono text-xs uppercase tracking-[0.22em] font-extrabold flex items-center justify-center hover:bg-white/90 transition-all duration-300 rounded-none shadow-[0_0_15px_rgba(255,255,255,0.15)]"
                 >
                   <span>MISSION BROWSER</span>
                 </Link>

@@ -23,7 +23,7 @@ import {
   X,
   Rocket
 } from 'lucide-react';
-import { Link } from '../router';
+import { Link, useRouter } from '../router';
 import { 
   lunarApi, 
   type SiteAnalysisData, 
@@ -32,6 +32,7 @@ import {
 } from '../services/lunarApi';
 import { IMAGES } from '../data/images';
 import { LunarInteractiveMap, type MapSiteItem } from '../components/LunarInteractiveMap';
+import { MoonTrekGlobe } from '../components/MoonTrekGlobe';
 import { MissionDatePicker } from '../components/MissionDatePicker';
 import { MultiTrackTimeline } from '../components/MultiTrackTimeline';
 import { ScenarioComparisonWorkbench } from '../components/ScenarioComparisonWorkbench';
@@ -87,6 +88,11 @@ const DEFAULT_CANDIDATE_SITES: MapSiteItem[] = [
 ];
 
 export const MissionBrowserPage: React.FC = () => {
+  const { search } = useRouter();
+
+  // Dual Viewport Mode: SPICE DE440 Unified Three.js vs NASA Moon Trek CesiumJS WMTS
+  const [viewportMode, setViewportMode] = useState<'SPICE_THREE' | 'TREK_CESIUM'>('SPICE_THREE');
+
   // Candidate sites pool
   const [candidateSites, setCandidateSites] = useState<MapSiteItem[]>(DEFAULT_CANDIDATE_SITES);
   const [selectedSiteId, setSelectedSiteId] = useState<string>('shackleton-connecting-ridge');
@@ -134,7 +140,7 @@ export const MissionBrowserPage: React.FC = () => {
   useEffect(() => {
     try {
       if (typeof window === 'undefined') return;
-      const params = new URLSearchParams(window.location.search);
+      const params = new URLSearchParams(search || window.location.search);
       const urlSite = params.get('site');
       const urlEpoch = params.get('epoch');
       const fromRoute = params.get('fromRoute');
@@ -162,7 +168,7 @@ export const MissionBrowserPage: React.FC = () => {
     } catch {
       // ignore parsing error
     }
-  }, []);
+  }, [search]);
 
   // Fetch verified candidate sites and science backend status on mount
   useEffect(() => {
@@ -179,21 +185,24 @@ export const MissionBrowserPage: React.FC = () => {
       .getDefaultSites()
       .then((sites) => {
         if (!isMounted || !Array.isArray(sites) || sites.length === 0) return;
-        const mapped: MapSiteItem[] = sites.map((s) => ({
-          id: s.id,
-          name: s.name,
-          latitudeDeg: s.latitudeDeg,
-          longitudeDeg: s.longitudeDeg,
-          elevationMeters: s.elevationMeters,
-          isDemCovered: true,
-          pinColor: s.id.includes('shackleton')
-            ? '#58D8D0'
-            : s.id.includes('malapert')
-            ? '#ECC068'
-            : s.id.includes('gerlache')
-            ? '#78F5EC'
-            : '#FFB3B0',
-        }));
+        const mapped: MapSiteItem[] = sites.map((s) => {
+          const defaultMatch = DEFAULT_CANDIDATE_SITES.find((d) => d.id === s.id);
+          return {
+            id: s.id,
+            name: s.name,
+            latitudeDeg: typeof s.latitudeDeg === 'number' ? s.latitudeDeg : (defaultMatch?.latitudeDeg ?? -89.78),
+            longitudeDeg: typeof s.longitudeDeg === 'number' ? s.longitudeDeg : (defaultMatch?.longitudeDeg ?? 125.4),
+            elevationMeters: typeof s.elevationMeters === 'number' ? s.elevationMeters : (defaultMatch?.elevationMeters ?? 0),
+            isDemCovered: s.id !== 'statio-shiv-shakti',
+            pinColor: s.id.includes('shackleton')
+              ? '#58D8D0'
+              : s.id.includes('malapert')
+              ? '#ECC068'
+              : s.id.includes('gerlache')
+              ? '#78F5EC'
+              : '#FFB3B0',
+          };
+        });
         setCandidateSites(mapped);
       })
       .catch(() => {
@@ -596,7 +605,7 @@ export const MissionBrowserPage: React.FC = () => {
                       {Math.abs(site.latitudeDeg).toFixed(2)}°S, {site.longitudeDeg >= 0 ? `${site.longitudeDeg.toFixed(2)}°E` : `${Math.abs(site.longitudeDeg).toFixed(2)}°W`}
                     </span>
                     <span className="text-white/40 tabular-nums text-[10px]">
-                      DATUM: {site.elevationMeters > 0 ? `+${site.elevationMeters.toFixed(0)}m` : `${site.elevationMeters.toFixed(0)}m`}
+                      DATUM: {typeof site.elevationMeters === 'number' ? `${site.elevationMeters > 0 ? '+' : ''}${site.elevationMeters.toFixed(0)}m` : '0m'}
                     </span>
                   </div>
                 </div>
@@ -841,7 +850,7 @@ export const MissionBrowserPage: React.FC = () => {
                 {Math.abs(activeSite.latitudeDeg).toFixed(2)}°S, {activeSite.longitudeDeg >= 0 ? `${activeSite.longitudeDeg.toFixed(2)}°E` : `${Math.abs(activeSite.longitudeDeg).toFixed(2)}°W`}
               </span>
               <span className="text-white/40 tabular-nums text-[10px]">
-                ELEVATION: {siteAnalysis ? `${siteAnalysis.terrain.elevationMeters > 0 ? '+' : ''}${siteAnalysis.terrain.elevationMeters.toFixed(1)} m` : `${activeSite.elevationMeters > 0 ? '+' : ''}${activeSite.elevationMeters.toFixed(0)} m`}
+                ELEVATION: {siteAnalysis?.terrain?.elevationMeters !== undefined ? `${siteAnalysis.terrain.elevationMeters > 0 ? '+' : ''}${siteAnalysis.terrain.elevationMeters.toFixed(1)} m` : (typeof activeSite.elevationMeters === 'number' ? `${activeSite.elevationMeters > 0 ? '+' : ''}${activeSite.elevationMeters.toFixed(0)} m` : '0 m')}
               </span>
             </div>
           </div>
@@ -1397,16 +1406,34 @@ export const MissionBrowserPage: React.FC = () => {
                   : 'scale-[0.998]'
               }`}
             >
-              {/* Unified 3D System Header Bar */}
+              {/* Unified 3D System Header Bar & Dual Mode Viewport Switcher */}
               <div className="flex flex-wrap items-center justify-between gap-2 mb-2 pb-1.5 border-b border-white/10 px-1">
-                <div className="flex flex-wrap items-center gap-1.5 font-mono text-xs font-bold uppercase tracking-wider">
-                  <div className="flex items-center gap-2 px-3 py-1.5 bg-[#070A0F] border border-[#58D8D0]/40 text-[#58D8D0] shadow-[0_0_15px_rgba(88,216,208,0.2)]">
-                    <Sun className="w-3.5 h-3.5 text-amber-400" />
-                    <span>UNIFIED HELIOCENTRIC SYSTEM (SUN → EARTH → MOON)</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-500/15 border border-emerald-500/40 text-emerald-300">
-                    <Globe className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>NASA MOON TREK WMTS INTEGRATED</span>
+                <div className="flex flex-wrap items-center gap-1.5 font-mono text-[9.5px]">
+                  <div className="flex items-center border border-white/20 bg-black p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setViewportMode('SPICE_THREE')}
+                      className={`px-3 py-1 font-bold uppercase transition-all cursor-pointer flex items-center gap-1.5 ${
+                        viewportMode === 'SPICE_THREE'
+                          ? 'bg-[#58D8D0] text-black font-extrabold shadow-[0_0_12px_rgba(88,216,208,0.4)]'
+                          : 'text-white/60 hover:text-white'
+                      }`}
+                    >
+                      <Sun size={11} className={viewportMode === 'SPICE_THREE' ? 'text-black' : 'text-amber-400'} />
+                      <span>HELIOCENTRIC 3D (SPICE DE440)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setViewportMode('TREK_CESIUM')}
+                      className={`px-3 py-1 font-bold uppercase transition-all cursor-pointer flex items-center gap-1.5 ${
+                        viewportMode === 'TREK_CESIUM'
+                          ? 'bg-[#00FF9D] text-black font-extrabold shadow-[0_0_12px_rgba(0,255,157,0.4)]'
+                          : 'text-white/60 hover:text-white'
+                      }`}
+                    >
+                      <Globe size={11} className={viewportMode === 'TREK_CESIUM' ? 'text-black' : 'text-emerald-400'} />
+                      <span>NASA MOON TREK GLOBE (CESIUM WMTS)</span>
+                    </button>
                   </div>
                 </div>
 
@@ -1416,19 +1443,29 @@ export const MissionBrowserPage: React.FC = () => {
                 </div>
               </div>
 
-              <LunarInteractiveMap
-                sites={candidateSites}
-                selectedSiteId={selectedSiteId}
-                onSelectSite={(id) => setSelectedSiteId(id)}
-                selectedForCompare={selectedForCompare}
-                isDemCovered={isDemCovered}
-                siteAnalysis={siteAnalysis}
-                epochDate={epochDate}
-                epochHour={epochHour}
-                onSimulationEpochChange={handleSimulationEpochChange}
-                isAnalyzing={isAnalyzing}
-                analysisError={analysisError}
-              />
+              {viewportMode === 'SPICE_THREE' ? (
+                <LunarInteractiveMap
+                  sites={candidateSites}
+                  selectedSiteId={selectedSiteId}
+                  onSelectSite={(id) => setSelectedSiteId(id)}
+                  selectedForCompare={selectedForCompare}
+                  isDemCovered={isDemCovered}
+                  siteAnalysis={siteAnalysis}
+                  epochDate={epochDate}
+                  epochHour={epochHour}
+                  onSimulationEpochChange={handleSimulationEpochChange}
+                  isAnalyzing={isAnalyzing}
+                  analysisError={analysisError}
+                />
+              ) : (
+                <MoonTrekGlobe
+                  sites={candidateSites}
+                  selectedSiteId={selectedSiteId}
+                  onSelectSite={(id) => setSelectedSiteId(id)}
+                  epochDate={epochDate}
+                  epochHour={epochHour}
+                />
+              )}
             </div>
 
           </div>

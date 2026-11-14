@@ -5,10 +5,14 @@ export interface MissionDatePickerProps {
   value: string; // YYYY-MM-DD
   onChange: (date: string) => void;
   className?: string;
+  inputClassName?: string;
   placeholder?: string;
   min?: string;
   max?: string;
   disabled?: boolean;
+  align?: 'left' | 'right';
+  iconPosition?: 'left' | 'right';
+  showUtcBadge?: boolean;
 }
 
 const MONTH_NAMES = [
@@ -86,10 +90,14 @@ export const MissionDatePicker: React.FC<MissionDatePickerProps> = ({
   value,
   onChange,
   className = '',
+  inputClassName = '',
   placeholder = 'YYYY-MM-DD',
   min = '1900-01-01',
   max = '2050-01-01',
   disabled = false,
+  align = 'left',
+  iconPosition = 'left',
+  showUtcBadge = false,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [inputValue, setInputValue] = useState(value || '');
@@ -265,27 +273,29 @@ export const MissionDatePicker: React.FC<MissionDatePickerProps> = ({
       {/* Visual Text & Calendar Button Container */}
       <div
         onClick={() => inputRef.current?.focus()}
-        className={`flex items-center w-full h-8 sm:h-8.5 bg-black border px-2 gap-1.5 transition-all cursor-pointer rounded-none ${
+        className={`flex items-center w-full ${inputClassName ? inputClassName : 'h-8 sm:h-8.5 bg-black border-white/20 hover:border-white/40'} border px-2.5 gap-2 transition-all cursor-pointer rounded-none ${
           inputError
             ? 'border-red-500/70 ring-1 ring-red-500/30'
             : isOpen
             ? 'border-[#58D8D0] ring-1 ring-[#58D8D0]/30'
-            : 'border-white/20 hover:border-white/40'
+            : ''
         }`}
       >
         {/* Calendar Trigger Icon Button ON THE LEFT */}
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            if (!disabled) setIsOpen((prev) => !prev);
-          }}
-          disabled={disabled}
-          title="Open interactive calendar (or click text to type/backspace)"
-          className="text-white/50 hover:text-[#58D8D0] transition-colors flex items-center justify-center shrink-0 cursor-pointer focus:outline-none p-0"
-        >
-          <CalendarIcon size={13} className={isOpen ? 'text-[#58D8D0]' : inputError ? 'text-red-400' : ''} />
-        </button>
+        {iconPosition === 'left' && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!disabled) setIsOpen((prev) => !prev);
+            }}
+            disabled={disabled}
+            title="Open interactive calendar"
+            className="text-white/50 hover:text-[#58D8D0] transition-colors flex items-center justify-center shrink-0 cursor-pointer focus:outline-none p-0"
+          >
+            <CalendarIcon size={14} className={isOpen ? 'text-[#58D8D0]' : inputError ? 'text-red-400' : ''} />
+          </button>
+        )}
 
         <input
           ref={inputRef}
@@ -297,13 +307,29 @@ export const MissionDatePicker: React.FC<MissionDatePickerProps> = ({
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           disabled={disabled}
-          className="min-w-0 flex-1 bg-transparent p-0 text-white font-mono text-xs outline-none placeholder:text-white/30 tracking-tight disabled:opacity-50"
+          className="min-w-0 flex-1 bg-transparent p-0 text-white font-mono text-[11px] sm:text-xs tabular-nums outline-none placeholder:text-white/30 tracking-tight disabled:opacity-50 select-text"
         />
 
-        {value && !inputError && (
+        {showUtcBadge && value && !inputError && (
           <span className="text-[9px] font-mono px-1 py-0.2 bg-[#58D8D0]/10 text-[#58D8D0] border border-[#58D8D0]/30 shrink-0 uppercase tracking-widest hidden sm:inline-block">
             UTC
           </span>
+        )}
+
+        {/* Calendar Trigger Icon Button ON THE RIGHT */}
+        {iconPosition === 'right' && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!disabled) setIsOpen((prev) => !prev);
+            }}
+            disabled={disabled}
+            title="Open interactive calendar"
+            className="text-white/70 hover:text-[#58D8D0] transition-colors flex items-center justify-center shrink-0 cursor-pointer focus:outline-none p-0.5 ml-1"
+          >
+            <CalendarIcon size={14} className={isOpen ? 'text-[#58D8D0]' : inputError ? 'text-red-400' : ''} />
+          </button>
         )}
       </div>
 
@@ -340,7 +366,7 @@ export const MissionDatePicker: React.FC<MissionDatePickerProps> = ({
       {/* Custom Aerospace Interactive Calendar Dropdown */}
       {isOpen && (
         <div
-          className="absolute z-50 top-full mt-1.5 left-0 w-80 max-w-[calc(100vw-2rem)] bg-[#08090C] border border-white/20 shadow-2xl p-3 text-white font-mono select-none"
+          className={`absolute z-50 top-full mt-1.5 ${align === 'right' ? 'right-0' : 'left-0'} w-80 max-w-[calc(100vw-2rem)] bg-[#08090C] border border-white/20 shadow-2xl p-3 text-white font-mono select-none`}
           style={{ backdropFilter: 'blur(12px)' }}
         >
           {/* Header: Month / Year Navigation */}

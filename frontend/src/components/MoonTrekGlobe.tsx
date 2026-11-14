@@ -280,7 +280,7 @@ export const MoonTrekGlobe: React.FC<MoonTrekGlobeProps> = ({
           disableDepthTestDistance: 500000.0,
         },
         label: {
-          text: ` ${site.name.toUpperCase()} \n [${site.latitudeDeg.toFixed(2)}°S, ${site.longitudeDeg.toFixed(2)}°E]`,
+          text: ` ${site.name.toUpperCase()} \n [${typeof site.latitudeDeg === 'number' ? Math.abs(site.latitudeDeg).toFixed(2) : '89.50'}°S, ${typeof site.longitudeDeg === 'number' ? site.longitudeDeg.toFixed(2) : '0.00'}°E]`,
           font: '12px "Space Mono", monospace',
           style: Cesium.LabelStyle.FILL_AND_OUTLINE,
           fillColor: isSelected ? Cesium.Color.fromCssColorString('#00FF9D') : Cesium.Color.WHITE,
