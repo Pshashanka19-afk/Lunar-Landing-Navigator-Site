@@ -132,4 +132,63 @@ describe('SitesController Unit Tests', () => {
     expect(analysis.next24HoursSummary.sunlightTotalHours).toBeGreaterThanOrEqual(0);
     expect(analysis.next24HoursSummary.earthVisibilityTotalHours).toBeGreaterThanOrEqual(0);
   });
+
+  it('compareSites evaluates multi-site trade-off for requested epoch and duration', async () => {
+    const req = {
+      body: {
+        sites: [
+          {
+            id: 'shackleton-connecting-ridge',
+            name: 'Shackleton Crater - Connecting Ridge',
+            latitudeDeg: -89.78,
+            longitudeDeg: 125.4,
+            elevationMeters: 1413.9,
+          },
+          {
+            id: 'malapert-massif',
+            name: 'Malapert Massif',
+            latitudeDeg: -85.9948,
+            longitudeDeg: -0.23578,
+            elevationMeters: -2854.7,
+          },
+        ],
+        requirements: {
+          minSunlightHours: 12.0,
+          maxSlopeDeg: 15.0,
+          weights: {
+            sunlightDuration: 35,
+            continuousSunlight: 20,
+            earthVisibility: 25,
+            slopeFlatness: 20,
+          },
+        },
+        startTimeUtc: '2026-10-14T12:00:00Z',
+        endTimeUtc: '2026-10-16T12:00:00Z',
+        stepSeconds: 1800,
+        demProvider: 'synthetic',
+      },
+    } as Request;
+
+    let jsonResult: any = null;
+    const res = {
+      json: vi.fn((data) => {
+        jsonResult = data;
+        return res;
+      }),
+      status: vi.fn().mockReturnThis(),
+    } as unknown as Response;
+    const next = vi.fn();
+
+    await SitesController.compareSites(req, res, next);
+
+    expect(jsonResult).toBeDefined();
+    expect(jsonResult.success).toBe(true);
+    expect(jsonResult.data.sites.length).toBe(2);
+    expect(jsonResult.data.ranking.length).toBe(2);
+    expect(jsonResult.data.interval.durationHours).toBe(48);
+    const site0 = jsonResult.data.sites[0];
+    expect(site0.metrics.sunlightTotalHours).toBeGreaterThanOrEqual(0);
+    expect(site0.metrics.earthVisibilityTotalHours).toBeGreaterThanOrEqual(0);
+    expect(typeof site0.metrics.slopeDeg).toBe('number');
+  });
 });

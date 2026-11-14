@@ -152,6 +152,9 @@ export const MissionBrowserPage: React.FC = () => {
   const [analysisError, setAnalysisError] = useState<string | null>(null);
 
   // Comparison & multi-site trade-off state
+  const [compareEpochDate, setCompareEpochDate] = useState<string>('2026-10-14');
+  const [compareEpochHour, setCompareEpochHour] = useState<number>(12); // 12:00 UTC
+  const [compareEpochMinute, setCompareEpochMinute] = useState<number>(0);
   const [compareDurationHours, setCompareDurationHours] = useState<number>(48);
   const [isComparing, setIsComparing] = useState<boolean>(false);
   const [comparisonResults, setComparisonResults] = useState<SiteComparisonResponse | null>(null);
@@ -160,6 +163,7 @@ export const MissionBrowserPage: React.FC = () => {
   // Rapid Mission Scenario Comparison Workbench state (hidden by default)
   const [showScenarioComparison, setShowScenarioComparison] = useState<boolean>(false);
   const [isEvaluatingComparison, setIsEvaluatingComparison] = useState<boolean>(false);
+  const [hasEvaluatedComparison, setHasEvaluatedComparison] = useState<boolean>(false);
   const [scenarioComparisonResults, setScenarioComparisonResults] = useState<SiteComparisonResponse | null>(null);
   const [scenarioComparisonError, setScenarioComparisonError] = useState<string | null>(null);
   const cachedComparisonKeyRef = useRef<string>('');
@@ -429,20 +433,24 @@ export const MissionBrowserPage: React.FC = () => {
   };
 
   // Current comparison parameter key to detect input changes & maintain cache validity
-  const currentComparisonKey = `${epochDate}_${epochHour}_${compareDurationHours}_${selectedForCompare.slice().sort().join(',')}`;
+  const currentComparisonKey = `${compareEpochDate}_${compareEpochHour}_${compareEpochMinute}_${compareDurationHours}_${selectedForCompare.slice().sort().join(',')}`;
   const isComparisonStale = Boolean(
     cachedComparisonKeyRef.current && cachedComparisonKeyRef.current !== currentComparisonKey
   );
 
   // Execute backend multi-site scenario comparison on-demand
   const executeScenarioComparison = useCallback(async () => {
-    if (selectedForCompare.length === 0) return;
+    if (selectedForCompare.length === 0) {
+      setScenarioComparisonError('Please select at least one candidate landing site for comparison.');
+      return;
+    }
     setIsComparing(true);
     setIsEvaluatingComparison(true);
     setScenarioComparisonError(null);
+    setHasEvaluatedComparison(true);
 
     const pad = (n: number) => Math.floor(n).toString().padStart(2, '0');
-    const startIso = `${epochDate}T${pad(epochHour)}:00:00Z`;
+    const startIso = `${compareEpochDate}T${pad(compareEpochHour)}:${pad(compareEpochMinute)}:00Z`;
     const startDate = new Date(startIso);
     const validStart = isNaN(startDate.getTime()) ? new Date('2026-10-14T12:00:00Z') : startDate;
     const endIso = new Date(validStart.getTime() + compareDurationHours * 3600 * 1000).toISOString();
@@ -484,21 +492,17 @@ export const MissionBrowserPage: React.FC = () => {
       setIsComparing(false);
       setIsEvaluatingComparison(false);
     }
-  }, [candidateSites, selectedForCompare, epochDate, epochHour, compareDurationHours, currentComparisonKey]);
+  }, [candidateSites, selectedForCompare, compareEpochDate, compareEpochHour, compareEpochMinute, compareDurationHours, currentComparisonKey]);
 
   // Alias for backward compatibility with sidebar controls
   const handleRunComparison = executeScenarioComparison;
 
-  // Toggle scenario comparison visibility & trigger on-demand calculation if needed
+  // Toggle scenario comparison visibility & scroll into view
   const handleToggleScenarioComparison = useCallback(() => {
     if (showScenarioComparison) {
       setShowScenarioComparison(false);
     } else {
       setShowScenarioComparison(true);
-      // Run comparison if not yet loaded or if parameters have changed
-      if (!scenarioComparisonResults || cachedComparisonKeyRef.current !== currentComparisonKey) {
-        executeScenarioComparison();
-      }
       setTimeout(() => {
         const el = document.getElementById('scenario-comparison-section');
         if (el) {
@@ -506,7 +510,7 @@ export const MissionBrowserPage: React.FC = () => {
         }
       }, 60);
     }
-  }, [showScenarioComparison, scenarioComparisonResults, currentComparisonKey, executeScenarioComparison]);
+  }, [showScenarioComparison]);
 
   // Derive active site
   const activeSite = candidateSites.find((s) => s.id === selectedSiteId) || candidateSites[0];
@@ -2095,13 +2099,22 @@ export const MissionBrowserPage: React.FC = () => {
                 availableSites={candidateSites}
                 activeSiteId={selectedSiteId}
                 selectedForCompare={selectedForCompare}
-                activeEpochDate={epochDate}
-                activeEpochHour={epochHour}
+                onToggleSiteForCompare={toggleSelectForCompare}
+                onSelectAllSites={selectAllForCompare}
+                onClearAllSites={clearCompareSelection}
+                compareEpochDate={compareEpochDate}
+                onChangeEpochDate={setCompareEpochDate}
+                compareEpochHour={compareEpochHour}
+                onChangeEpochHour={setCompareEpochHour}
+                compareEpochMinute={compareEpochMinute}
+                onChangeEpochMinute={setCompareEpochMinute}
                 compareDurationHours={compareDurationHours}
+                onChangeDurationHours={setCompareDurationHours}
                 comparisonResults={scenarioComparisonResults}
                 isLoading={isEvaluatingComparison}
                 error={scenarioComparisonError}
                 isStale={isComparisonStale}
+                hasEvaluated={hasEvaluatedComparison}
                 onApplyScenarioTo3D={(siteId) => {
                   setSelectedSiteId(siteId);
                   const mapElement = document.getElementById('mission-simulator-view');
@@ -2109,7 +2122,7 @@ export const MissionBrowserPage: React.FC = () => {
                     mapElement.scrollIntoView({ behavior: 'smooth' });
                   }
                 }}
-                onReevaluate={executeScenarioComparison}
+                onExecuteComparison={executeScenarioComparison}
               />
             )}
           </div>

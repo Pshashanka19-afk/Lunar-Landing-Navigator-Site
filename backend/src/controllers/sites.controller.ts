@@ -245,15 +245,37 @@ export class SitesController {
         elevationMeters: s.elevationMeters,
       }));
 
-      const comparison = await SiteScoringService.compareSites(
-        ephemerisProvider,
-        demProvider,
-        candidateSites,
-        parsed.requirements,
-        parsed.startTimeUtc,
-        parsed.endTimeUtc,
-        parsed.stepSeconds
-      );
+      let comparison;
+      try {
+        comparison = await SiteScoringService.compareSites(
+          ephemerisProvider,
+          demProvider,
+          candidateSites,
+          parsed.requirements,
+          parsed.startTimeUtc,
+          parsed.endTimeUtc,
+          parsed.stepSeconds
+        );
+      } catch (err: any) {
+        if (
+          (!parsed.demProvider || parsed.demProvider === 'geotiff') &&
+          err?.message &&
+          (err.message.includes('outside DEM coverage') || err.message.includes('NoData'))
+        ) {
+          const fallbackDem = DemFactory.getDemProvider('synthetic');
+          comparison = await SiteScoringService.compareSites(
+            ephemerisProvider,
+            fallbackDem,
+            candidateSites,
+            parsed.requirements,
+            parsed.startTimeUtc,
+            parsed.endTimeUtc,
+            parsed.stepSeconds
+          );
+        } else {
+          throw err;
+        }
+      }
 
       res.json({
         success: true,
