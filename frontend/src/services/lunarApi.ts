@@ -540,6 +540,14 @@ export const lunarApi = {
   },
 
   /**
+   * Retrieve an individual candidate landing site by ID
+   */
+  async getSiteById(id: string): Promise<DemonstrationLandingSite> {
+    const res: any = await apiFetch<any>(`/sites/${id}`);
+    return res.site || res;
+  },
+
+  /**
    * 360-degree local terrain horizon elevation profile from LOLA DEM GeoTIFF.
    * Gracefully falls back to synthetic flat datum if coordinates are outside South Pole DEM coverage.
    */
@@ -755,17 +763,25 @@ export const lunarApi = {
     observerHeightMeters?: number;
   }): Promise<SiteAnalysisData> {
     try {
-      const res = await fetch('/api/test/site-analysis', {
+      return await apiFetch<SiteAnalysisData>('/sites/analysis', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(params),
       });
-      if (res.ok) {
-        const json = await res.json();
-        return json.data !== undefined ? json.data : json;
-      }
     } catch {
-      // Fallback
+      try {
+        const res = await fetch('/api/test/site-analysis', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(params),
+        });
+        if (res.ok) {
+          const json = await res.json();
+          return json.data !== undefined ? json.data : json;
+        }
+      } catch {
+        // Fallback to individual endpoints
+      }
     }
 
     const [sky, surface, illumination] = await Promise.all([

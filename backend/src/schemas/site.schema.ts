@@ -22,5 +22,14 @@ export const validateSiteRequestSchema = z.object({
   site: landingSiteSchema,
 });
 
+export const siteAnalysisRequestSchema = z.object({
+  site: landingSiteSchema,
+  epochUtc: z.string().optional().default(() => new Date().toISOString()),
+  observerHeightMeters: z.number().nonnegative().optional().default(2.0),
+  searchRadiusMeters: z.number().positive().optional().default(1000.0),
+  azimuthStepDeg: z.number().positive().optional().default(10.0),
+});
+
 export type LunarCoordinatesInput = z.infer<typeof lunarCoordinatesSchema>;
 export type LandingSiteInput = z.infer<typeof landingSiteSchema>;
+export type SiteAnalysisRequestInput = z.infer<typeof siteAnalysisRequestSchema>;

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   Compass, 
   Calendar, 
@@ -35,6 +35,7 @@ import { LunarInteractiveMap, type MapSiteItem } from '../components/LunarIntera
 import { MissionDatePicker } from '../components/MissionDatePicker';
 import { MultiTrackTimeline } from '../components/MultiTrackTimeline';
 import { ScenarioComparisonWorkbench } from '../components/ScenarioComparisonWorkbench';
+import { SimulationStatusHeader } from '../components/SimulationConfigToolbar';
 
 // Helper to retrieve authentic verified project image asset
 const getSiteImage = (id: string, name?: string): string => {
@@ -43,14 +44,17 @@ const getSiteImage = (id: string, name?: string): string => {
   if (text.includes('gerlache')) return IMAGES.clpsLander;
   if (text.includes('haworth')) return IMAGES.earthRise;
   if (text.includes('nobile')) return IMAGES.shadowRay;
+  if (text.includes('shiv') || text.includes('shakti') || text.includes('chandrayaan')) return IMAGES.clpsLander;
+  if (text.includes('mouton')) return IMAGES.psrTerminator;
+  if (text.includes('peak')) return IMAGES.malapertPeak;
   return IMAGES.lolaDem; // Shackleton Crater Ridge default
 };
 
-// Default NASA South Pole candidate landing sites
+// Default NASA South Pole candidate landing sites (All 8 verified landing zones from scientific datasets)
 const DEFAULT_CANDIDATE_SITES: MapSiteItem[] = [
   {
     id: 'shackleton-connecting-ridge',
-    name: 'Shackleton Crater Ridge',
+    name: 'Shackleton Crater - Connecting Ridge',
     latitudeDeg: -89.78,
     longitudeDeg: 125.40,
     elevationMeters: 1413.9,
@@ -58,42 +62,78 @@ const DEFAULT_CANDIDATE_SITES: MapSiteItem[] = [
     isDemCovered: true,
   },
   {
-    id: 'malapert-mountain',
+    id: 'malapert-massif',
     name: 'Malapert Massif',
-    latitudeDeg: -86.04,
-    longitudeDeg: 2.70,
+    latitudeDeg: -85.9948,
+    longitudeDeg: -0.23578,
     elevationMeters: -2854.7,
     pinColor: '#ECC068',
     isDemCovered: true,
   },
   {
-    id: 'de-gerlache-rim-2',
-    name: 'de Gerlache Rim',
+    id: 'de-gerlache-rim',
+    name: 'de Gerlache Crater Rim',
     latitudeDeg: -88.71,
-    longitudeDeg: -68.70,
+    longitudeDeg: -88.35,
     elevationMeters: -1148.4,
     pinColor: '#78F5EC',
     isDemCovered: true,
   },
   {
     id: 'haworth-crater-rim',
-    name: 'Haworth Crater Rim',
-    latitudeDeg: -87.87,
-    longitudeDeg: -5.17,
+    name: 'Haworth (Artemis Candidate Region)',
+    latitudeDeg: -86.7639,
+    longitudeDeg: -22.777,
     elevationMeters: -1200.0,
     pinColor: '#FFB3B0',
+    isDemCovered: true,
+  },
+  {
+    id: 'statio-shiv-shakti',
+    name: 'Statio Shiv Shakti',
+    latitudeDeg: -69.3734,
+    longitudeDeg: 32.3198,
+    elevationMeters: 0.0,
+    pinColor: '#FFD700',
+    isDemCovered: false,
+  },
+  {
+    id: 'mons-mouton',
+    name: 'Mons Mouton (MMO01)',
+    latitudeDeg: -85.416,
+    longitudeDeg: 31.851,
+    elevationMeters: 2200.0,
+    pinColor: '#B197FC',
+    isDemCovered: true,
+  },
+  {
+    id: 'peak-near-shackleton',
+    name: 'Peak Near Shackleton',
+    latitudeDeg: -88.811,
+    longitudeDeg: 123.6901,
+    elevationMeters: 1100.0,
+    pinColor: '#63E6BE',
+    isDemCovered: true,
+  },
+  {
+    id: 'nobile-rim-1',
+    name: 'Nobile Rim 1',
+    latitudeDeg: -85.295,
+    longitudeDeg: 36.917,
+    elevationMeters: 1800.0,
+    pinColor: '#FFA94D',
     isDemCovered: true,
   },
 ];
 
 export const MissionBrowserPage: React.FC = () => {
-  // Candidate sites pool
+  // Candidate sites pool (initialized with all 8 authentic Artemis candidate landing zones)
   const [candidateSites, setCandidateSites] = useState<MapSiteItem[]>(DEFAULT_CANDIDATE_SITES);
   const [selectedSiteId, setSelectedSiteId] = useState<string>('shackleton-connecting-ridge');
   const [selectedForCompare, setSelectedForCompare] = useState<string[]>([
     'shackleton-connecting-ridge',
-    'malapert-mountain',
-    'de-gerlache-rim-2',
+    'malapert-massif',
+    'de-gerlache-rim',
   ]);
 
   // Shared observation date & time (UTC)
@@ -110,6 +150,14 @@ export const MissionBrowserPage: React.FC = () => {
   const [compareDurationHours, setCompareDurationHours] = useState<number>(48);
   const [isComparing, setIsComparing] = useState<boolean>(false);
   const [comparisonResults, setComparisonResults] = useState<SiteComparisonResponse | null>(null);
+  const [dualSplitTab, setDualSplitTab] = useState<'comparison' | 'telemetry'>('comparison');
+
+  // Rapid Mission Scenario Comparison Workbench state (hidden by default)
+  const [showScenarioComparison, setShowScenarioComparison] = useState<boolean>(false);
+  const [isEvaluatingComparison, setIsEvaluatingComparison] = useState<boolean>(false);
+  const [scenarioComparisonResults, setScenarioComparisonResults] = useState<SiteComparisonResponse | null>(null);
+  const [scenarioComparisonError, setScenarioComparisonError] = useState<string | null>(null);
+  const cachedComparisonKeyRef = useRef<string>('');
 
   // Custom coordinates drawer
   const [showCustomDrawer, setShowCustomDrawer] = useState<boolean>(false);
@@ -123,9 +171,10 @@ export const MissionBrowserPage: React.FC = () => {
   const [showAdvancedSnapshot, setShowAdvancedSnapshot] = useState<boolean>(false);
 
   // VS Code-style Activity Bar & Sidebar State ('sites' | 'telemetry' | 'both' | null)
-  // Initially null (closed) matching VS Code closed sidebar screenshot
+  // Default to 'sites' so candidate sites panel is immediately open and responsive
   type SidebarTab = 'sites' | 'telemetry' | 'both' | null;
-  const [activeSidebarTab, setActiveSidebarTab] = useState<SidebarTab>(null);
+  const lastActiveTabRef = useRef<SidebarTab>('sites');
+  const [activeSidebarTab, setActiveSidebarTab] = useState<SidebarTab>('sites');
 
   // Arrival scenario handoff alert from Route Planner
   const [fromRouteNotice, setFromRouteNotice] = useState<{ siteId: string; arrivalEpoch: string } | null>(null);
@@ -184,15 +233,23 @@ export const MissionBrowserPage: React.FC = () => {
           name: s.name,
           latitudeDeg: s.latitudeDeg,
           longitudeDeg: s.longitudeDeg,
-          elevationMeters: s.elevationMeters,
-          isDemCovered: true,
+          elevationMeters: s.elevationMeters || 0,
+          isDemCovered: s.id !== 'statio-shiv-shakti',
           pinColor: s.id.includes('shackleton')
             ? '#58D8D0'
             : s.id.includes('malapert')
             ? '#ECC068'
             : s.id.includes('gerlache')
             ? '#78F5EC'
-            : '#FFB3B0',
+            : s.id.includes('haworth')
+            ? '#FFB3B0'
+            : s.id.includes('shiv')
+            ? '#FFD700'
+            : s.id.includes('mouton')
+            ? '#B197FC'
+            : s.id.includes('peak')
+            ? '#63E6BE'
+            : '#FFA94D',
         }));
         setCandidateSites(mapped);
       })
@@ -233,6 +290,8 @@ export const MissionBrowserPage: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  const activeAnalysisRequestIdRef = useRef<number>(0);
+
   // Fetch active site analysis from backend whenever site or time changes
   const fetchActiveSiteAnalysis = useCallback(async () => {
     const site = candidateSites.find((s) => s.id === selectedSiteId);
@@ -252,6 +311,7 @@ export const MissionBrowserPage: React.FC = () => {
       return;
     }
 
+    const currentRequestId = ++activeAnalysisRequestIdRef.current;
     setIsAnalyzing(true);
     setAnalysisError(null);
 
@@ -271,44 +331,55 @@ export const MissionBrowserPage: React.FC = () => {
         observerHeightMeters: 2.0,
       });
 
-      setSiteAnalysis(data);
+      // Discard stale out-of-order responses
+      if (currentRequestId === activeAnalysisRequestIdRef.current) {
+        setSiteAnalysis(data);
+      }
     } catch (err: any) {
-      setAnalysisError(err.message || 'Failed to fetch scientific analysis from backend.');
+      if (currentRequestId === activeAnalysisRequestIdRef.current) {
+        setAnalysisError(err.message || 'Failed to fetch scientific analysis from backend.');
+      }
     } finally {
-      setIsAnalyzing(false);
+      if (currentRequestId === activeAnalysisRequestIdRef.current) {
+        setIsAnalyzing(false);
+      }
     }
   }, [candidateSites, selectedSiteId, epochDate, epochHour]);
 
-  // Handler for continuous simulation clock updates from 3D map
-  const handleSimulationEpochChange = useCallback((isoUtc: string) => {
-    try {
-      const d = new Date(isoUtc);
-      if (isNaN(d.getTime())) return;
-      const yyyy = d.getUTCFullYear();
-      const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
-      const dd = String(d.getUTCDate()).padStart(2, '0');
-      const dateStr = `${yyyy}-${mm}-${dd}`;
-      const hourVal = d.getUTCHours();
-      setEpochDate((prev) => (prev === dateStr ? prev : dateStr));
-      setEpochHour((prev) => (prev === hourVal ? prev : hourVal));
-    } catch {
-      // Ignore parsing errors
-    }
+  // Read-only separation: Simulation animation playback must never mutate mission configuration
+  // or trigger backend ephemeris recalculations.
+  const handleSimulationEpochChange = useCallback((_isoUtc: string) => {
+    // Strictly read-only: No state mutation during animation playback
   }, []);
 
   useEffect(() => {
-    fetchActiveSiteAnalysis();
+    // Debounce to prevent flooding backend during continuous simulation playback
+    const timer = setTimeout(() => {
+      fetchActiveSiteAnalysis();
+    }, 300);
+    return () => clearTimeout(timer);
   }, [fetchActiveSiteAnalysis]);
 
   // Toggle selection for comparison
   const toggleSelectForCompare = (id: string) => {
     setSelectedForCompare((prev) => {
       if (prev.includes(id)) {
-        if (prev.length <= 1) return prev; // Keep at least one
         return prev.filter((item) => item !== id);
       }
       return [...prev, id];
     });
+  };
+
+  const removeFromCompare = (id: string) => {
+    setSelectedForCompare((prev) => prev.filter((item) => item !== id));
+  };
+
+  const clearCompareSelection = () => {
+    setSelectedForCompare([]);
+  };
+
+  const selectAllForCompare = () => {
+    setSelectedForCompare(candidateSites.map((s) => s.id));
   };
 
   // Add custom coordinates via backend validation
@@ -349,10 +420,18 @@ export const MissionBrowserPage: React.FC = () => {
     }
   };
 
-  // Run backend multi-site comparison
-  const handleRunComparison = async () => {
+  // Current comparison parameter key to detect input changes & maintain cache validity
+  const currentComparisonKey = `${epochDate}_${epochHour}_${compareDurationHours}_${selectedForCompare.slice().sort().join(',')}`;
+  const isComparisonStale = Boolean(
+    cachedComparisonKeyRef.current && cachedComparisonKeyRef.current !== currentComparisonKey
+  );
+
+  // Execute backend multi-site scenario comparison on-demand
+  const executeScenarioComparison = useCallback(async () => {
     if (selectedForCompare.length === 0) return;
     setIsComparing(true);
+    setIsEvaluatingComparison(true);
+    setScenarioComparisonError(null);
 
     const pad = (n: number) => Math.floor(n).toString().padStart(2, '0');
     const startIso = `${epochDate}T${pad(epochHour)}:00:00Z`;
@@ -389,17 +468,37 @@ export const MissionBrowserPage: React.FC = () => {
       });
 
       setComparisonResults(result);
-    } catch {
-      // Graceful error handling
+      setScenarioComparisonResults(result);
+      cachedComparisonKeyRef.current = currentComparisonKey;
+    } catch (err: any) {
+      setScenarioComparisonError(err.message || 'Failed to calculate scenario comparison.');
     } finally {
       setIsComparing(false);
+      setIsEvaluatingComparison(false);
     }
-  };
+  }, [candidateSites, selectedForCompare, epochDate, epochHour, compareDurationHours, currentComparisonKey]);
 
-  // Run initial comparison on mount
-  useEffect(() => {
-    handleRunComparison();
-  }, [compareDurationHours]);
+  // Alias for backward compatibility with sidebar controls
+  const handleRunComparison = executeScenarioComparison;
+
+  // Toggle scenario comparison visibility & trigger on-demand calculation if needed
+  const handleToggleScenarioComparison = useCallback(() => {
+    if (showScenarioComparison) {
+      setShowScenarioComparison(false);
+    } else {
+      setShowScenarioComparison(true);
+      // Run comparison if not yet loaded or if parameters have changed
+      if (!scenarioComparisonResults || cachedComparisonKeyRef.current !== currentComparisonKey) {
+        executeScenarioComparison();
+      }
+      setTimeout(() => {
+        const el = document.getElementById('scenario-comparison-section');
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth' });
+        }
+      }, 60);
+    }
+  }, [showScenarioComparison, scenarioComparisonResults, currentComparisonKey, executeScenarioComparison]);
 
   // Derive active site
   const activeSite = candidateSites.find((s) => s.id === selectedSiteId) || candidateSites[0];
@@ -518,7 +617,134 @@ export const MissionBrowserPage: React.FC = () => {
 
   const assessment = getOverallAssessment();
 
+  // ---------------------------------------------------------------------------
+  // Reusable Temporal Clock Component with SPICE Ephemeris Synchronization
+  // ---------------------------------------------------------------------------
+  const renderTemporalClock = () => (
+    <div className="bg-[#08090C] border border-white/15 p-3.5 sm:p-4 flex flex-col gap-3 rounded-none shadow-md">
+      <div className="flex items-center justify-between border-b border-white/10 pb-2">
+        <span className="font-mono text-xs uppercase tracking-[0.2em] font-bold text-white flex items-center gap-2">
+          <Calendar size={13} className="text-[#ECC068]" />
+          <span>TEMPORAL CLOCK</span>
+        </span>
+        <span className="font-mono text-[9px] px-2 py-0.5 bg-[#ECC068]/15 text-[#ECC068] border border-[#ECC068]/30 font-bold uppercase tracking-wider rounded-none">
+          UTC TIME
+        </span>
+      </div>
+
+      <div className="flex flex-col gap-2.5">
+        {/* Date Selector */}
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center justify-between">
+            <label className="text-[10px] uppercase font-mono font-bold text-white/50 flex items-center gap-1">
+              <Calendar size={11} className="text-white/60" />
+              <span>Observation Date</span>
+            </label>
+            <span className="text-[9px] font-mono text-[#58D8D0] flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#58D8D0]" />
+              <span>3D SIM SYNCED</span>
+            </span>
+          </div>
+          <MissionDatePicker
+            value={epochDate}
+            onChange={(newDate) => setEpochDate(newDate)}
+            min="1900-01-01"
+            max="2050-01-01"
+          />
+        </div>
+
+        {/* Hour Selector */}
+        <div className="flex flex-col gap-1">
+          <label className="text-[10px] uppercase font-mono font-bold text-white/50 flex items-center gap-1">
+            <Clock size={11} className="text-white/60" />
+            <span>Observation Hour (UTC)</span>
+          </label>
+          <div className="flex items-center w-full h-8.5 bg-black/80 border border-white/20 hover:border-white/40 px-2.5 gap-2 transition-all rounded-none">
+            <Clock size={12} className="text-[#ECC068] shrink-0" />
+            <select
+              value={epochHour}
+              onChange={(e) => setEpochHour(parseInt(e.target.value))}
+              className="flex-1 bg-transparent text-white font-mono text-xs outline-none cursor-pointer tracking-wider"
+            >
+              {Array.from({ length: 24 }, (_, i) => (
+                <option key={i} value={i} className="bg-[#08090C] text-white">
+                  {String(i).padStart(2, '0')}:00 UTC
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Active Synced Simulation Banner */}
+        <div className="flex items-center justify-between px-2.5 py-1.5 bg-[#0B0F14] border border-[#58D8D0]/30 text-[9.5px] font-mono">
+          <span className="text-white/60 flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#58D8D0] animate-pulse" />
+            <span>3D SIM TIME:</span>
+          </span>
+          <span className="text-[#58D8D0] font-bold tabular-nums">
+            {epochDate} {String(epochHour).padStart(2, '0')}:00 UTC
+          </span>
+        </div>
+
+        {/* Fixed Height Synchronized Kernel Status Bar (Eliminates Layout Shift) */}
+        <div className="h-7 min-h-[28px] flex items-center px-2.5 bg-black/60 border border-white/10 text-[9.5px] font-mono overflow-hidden">
+          {isAnalyzing ? (
+            <div className="flex items-center gap-2 text-[#58D8D0] truncate">
+              <RefreshCw size={11} className="animate-spin shrink-0" />
+              <span className="truncate">Calculating SPICE DE440 ephemeris for {epochDate}...</span>
+            </div>
+          ) : analysisError ? (
+            <div className="flex items-center gap-1.5 text-red-300 truncate">
+              <AlertTriangle size={11} className="text-red-400 shrink-0" />
+              <span className="truncate">{analysisError}</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 text-white/50">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+              <span className="truncate">SPICE DE440 EPHEMERIS // SYNCHRONIZED</span>
+            </div>
+          )}
+        </div>
+
+        {/* Mission Presets */}
+        <div className="pt-1.5 flex flex-wrap gap-1.5 items-center">
+          <span className="text-[9px] font-mono uppercase text-white/40 mr-0.5">Presets:</span>
+          {[
+            { label: 'Future (Mar 2027)', date: '2027-03-15', hour: 12 },
+            { label: 'Artemis III (Oct 2026)', date: '2026-10-14', hour: 12 },
+            { label: 'Summer Peak (Dec 2026)', date: '2026-12-21', hour: 12 },
+            { label: 'Apollo 11 (Jul 1969)', date: '1969-07-20', hour: 20 },
+            { label: 'Today', date: new Date().toISOString().split('T')[0], hour: 12 },
+          ].map((preset) => (
+            <button
+              key={preset.label}
+              type="button"
+              onClick={() => {
+                setEpochDate(preset.date);
+                setEpochHour(preset.hour);
+              }}
+              className={`px-2 py-0.5 text-[9.5px] font-mono uppercase tracking-wider border transition-colors cursor-pointer rounded-none ${
+                epochDate === preset.date
+                  ? 'bg-[#58D8D0]/20 border-[#58D8D0] text-[#58D8D0] font-bold'
+                  : 'bg-black/60 hover:bg-white/15 border-white/15 text-white/70 hover:text-white'
+              }`}
+            >
+              {preset.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="text-[9.5px] font-mono text-white/40 flex items-center gap-1.5 pt-1">
+        <RefreshCw size={10} className={isAnalyzing ? 'animate-spin text-white' : 'text-white/30'} />
+        <span>SPICE DE440 Topocentric Kernel Sync</span>
+      </div>
+    </div>
+  );
+
+  // ---------------------------------------------------------------------------
   // Helper render for Candidate Sites panel content
+  // ---------------------------------------------------------------------------
   const renderCandidateSitesPanel = () => (
     <div className="flex flex-col gap-4">
       {/* Candidate Landing Sites Panel */}
@@ -531,6 +757,50 @@ export const MissionBrowserPage: React.FC = () => {
           <span className="font-mono text-[9.5px] text-white/50 tracking-widest uppercase">
             {candidateSites.length} STAGED
           </span>
+        </div>
+
+        {/* Multi-Site Comparison Toolbar */}
+        <div className="flex items-center justify-between px-2.5 py-1.5 bg-black/60 border border-white/10 text-[10px] font-mono">
+          <span className="text-white/70">
+            <span className="text-[#58D8D0] font-bold">{selectedForCompare.length}</span> SELECTED FOR COMPARE
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={selectAllForCompare}
+              className="text-[#58D8D0] hover:underline cursor-pointer uppercase font-bold"
+              title="Select all candidate sites for comparison"
+            >
+              ALL
+            </button>
+            <span className="text-white/20">|</span>
+            <button
+              type="button"
+              onClick={clearCompareSelection}
+              className="text-white/40 hover:text-white cursor-pointer uppercase"
+              title="Clear comparison selection"
+            >
+              CLEAR
+            </button>
+            {selectedForCompare.length >= 2 && (
+              <>
+                <span className="text-white/20">|</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveSidebarTab('both');
+                    setDualSplitTab('comparison');
+                    lastActiveTabRef.current = 'both';
+                  }}
+                  className="text-amber-300 font-bold hover:underline cursor-pointer flex items-center gap-1"
+                  title="Open Dual Split Comparison"
+                >
+                  <span>DUAL SPLIT</span>
+                  <span>→</span>
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         {/* Candidate Sites List */}
@@ -575,10 +845,16 @@ export const MissionBrowserPage: React.FC = () => {
                     {site.name}
                   </span>
 
-                  {/* DEM Status */}
-                  <span className="px-1.5 py-0.2 font-mono text-[8.5px] uppercase tracking-widest shrink-0 border border-white/20 bg-white/5 text-white/60 rounded-none">
-                    DEM 80M
-                  </span>
+                  {/* Active Target / DEM Status Badge */}
+                  {isActive ? (
+                    <span className="px-1.5 py-0.2 font-mono text-[8.5px] uppercase tracking-widest shrink-0 border border-[#58D8D0]/50 bg-[#58D8D0]/20 text-[#58D8D0] font-bold rounded-none">
+                      ACTIVE TARGET
+                    </span>
+                  ) : (
+                    <span className="px-1.5 py-0.2 font-mono text-[8.5px] uppercase tracking-widest shrink-0 border border-white/20 bg-white/5 text-white/60 rounded-none">
+                      DEM 80M
+                    </span>
+                  )}
                 </div>
 
                 {/* Thumbnail & Selenographic Coordinates */}
@@ -675,129 +951,14 @@ export const MissionBrowserPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Temporal Clock & Observation Epoch */}
-      <div className="bg-[#08090C] border border-white/15 p-3.5 sm:p-4 flex flex-col gap-3 rounded-none">
-        <div className="flex items-center justify-between border-b border-white/10 pb-2">
-          <span className="font-mono text-xs uppercase tracking-[0.2em] font-bold text-white flex items-center gap-2">
-            <Calendar size={13} className="text-[#ECC068]" />
-            <span>TEMPORAL CLOCK</span>
-          </span>
-          <span className="font-mono text-[9px] px-2 py-0.5 bg-[#ECC068]/15 text-[#ECC068] border border-[#ECC068]/30 font-bold uppercase tracking-wider rounded-none">
-            UTC TIME
-          </span>
-        </div>
-
-        <div className="flex flex-col gap-2.5">
-          {/* Date Selector */}
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center justify-between">
-              <label className="text-[10px] uppercase font-mono font-bold text-white/50 flex items-center gap-1">
-                <Calendar size={11} className="text-white/60" />
-                <span>Observation Date</span>
-              </label>
-              <span className="text-[9px] font-mono text-[#58D8D0] flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#58D8D0]" />
-                <span>3D SIM SYNCED</span>
-              </span>
-            </div>
-            <MissionDatePicker
-              value={epochDate}
-              onChange={(newDate) => setEpochDate(newDate)}
-              min="1900-01-01"
-              max="2050-01-01"
-            />
-          </div>
-
-          {/* Hour Selector */}
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] uppercase font-mono font-bold text-white/50 flex items-center gap-1">
-              <Clock size={11} className="text-white/60" />
-              <span>Observation Hour (UTC)</span>
-            </label>
-            <div className="flex items-center w-full h-8.5 bg-black/80 border border-white/20 hover:border-white/40 px-2.5 gap-2 transition-all rounded-none">
-              <Clock size={12} className="text-[#ECC068] shrink-0" />
-              <select
-                value={epochHour}
-                onChange={(e) => setEpochHour(parseInt(e.target.value))}
-                className="flex-1 bg-transparent text-white font-mono text-xs outline-none cursor-pointer tracking-wider"
-              >
-                {Array.from({ length: 24 }, (_, i) => (
-                  <option key={i} value={i} className="bg-[#08090C] text-white">
-                    {String(i).padStart(2, '0')}:00 UTC
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Active Synced Simulation Banner */}
-          <div className="flex items-center justify-between px-2.5 py-1.5 bg-[#0B0F14] border border-[#58D8D0]/30 text-[9.5px] font-mono">
-            <span className="text-white/60 flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#58D8D0] animate-pulse" />
-              <span>3D SIM TIME:</span>
-            </span>
-            <span className="text-[#58D8D0] font-bold tabular-nums">
-              {epochDate} {String(epochHour).padStart(2, '0')}:00 UTC
-            </span>
-          </div>
-
-          {/* Loading Indicator when calculating */}
-          {isAnalyzing && (
-            <div className="flex items-center gap-2 px-2.5 py-1.5 bg-[#58D8D0]/10 border border-[#58D8D0]/40 text-[9.5px] font-mono text-[#58D8D0] animate-in fade-in">
-              <RefreshCw size={11} className="animate-spin shrink-0" />
-              <span>Calculating SPICE DE440 ephemeris for {epochDate}...</span>
-            </div>
-          )}
-
-          {/* Warning / Error Indicator */}
-          {analysisError && (
-            <div className="flex items-start gap-1.5 px-2.5 py-1.5 bg-red-950/70 border border-red-500/50 text-[9.5px] font-mono text-red-300 animate-in fade-in">
-              <AlertTriangle size={12} className="text-red-400 shrink-0 mt-0.5" />
-              <div className="flex flex-col gap-0.5">
-                <span className="font-bold text-red-200">Ephemeris Warning:</span>
-                <span>{analysisError}</span>
-              </div>
-            </div>
-          )}
-
-          {/* Mission Presets */}
-          <div className="pt-1.5 flex flex-wrap gap-1.5 items-center">
-            <span className="text-[9px] font-mono uppercase text-white/40 mr-0.5">Presets:</span>
-            {[
-              { label: 'Future (Mar 2027)', date: '2027-03-15', hour: 12 },
-              { label: 'Artemis III (Oct 2026)', date: '2026-10-14', hour: 12 },
-              { label: 'Summer Peak (Dec 2026)', date: '2026-12-21', hour: 12 },
-              { label: 'Apollo 11 (Jul 1969)', date: '1969-07-20', hour: 20 },
-              { label: 'Today', date: new Date().toISOString().split('T')[0], hour: 12 },
-            ].map((preset) => (
-              <button
-                key={preset.label}
-                type="button"
-                onClick={() => {
-                  setEpochDate(preset.date);
-                  setEpochHour(preset.hour);
-                }}
-                className={`px-2 py-0.5 text-[9.5px] font-mono uppercase tracking-wider border transition-colors cursor-pointer rounded-none ${
-                  epochDate === preset.date
-                    ? 'bg-[#58D8D0]/20 border-[#58D8D0] text-[#58D8D0] font-bold'
-                    : 'bg-black/60 hover:bg-white/15 border-white/15 text-white/70 hover:text-white'
-                }`}
-              >
-                {preset.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="text-[9.5px] font-mono text-white/40 flex items-center gap-1.5 pt-1">
-          <RefreshCw size={10} className={isAnalyzing ? 'animate-spin text-white' : 'text-white/30'} />
-          <span>SPICE DE440 Topocentric Kernel Sync</span>
-        </div>
-      </div>
+      {/* Synchronized Temporal Clock */}
+      {renderTemporalClock()}
     </div>
   );
 
+  // ---------------------------------------------------------------------------
   // Helper render for Site Telemetry panel content
+  // ---------------------------------------------------------------------------
   const renderSiteTelemetryPanel = () => (
     <div className="flex flex-col gap-4">
       <div className="bg-[#08090C] border border-white/15 p-3.5 sm:p-4 flex flex-col gap-4 rounded-none relative shadow-lg">
@@ -824,7 +985,7 @@ export const MissionBrowserPage: React.FC = () => {
         )}
 
         {/* Active Site Header & Terrain Thumbnail */}
-        <div className="flex items-start gap-3">
+        <div className="flex items-start gap-3 h-12">
           <div className="w-12 h-12 overflow-hidden border border-white/20 shrink-0 bg-black rounded-none">
             <img
               src={getSiteImage(activeSite.id, activeSite.name)}
@@ -851,7 +1012,7 @@ export const MissionBrowserPage: React.FC = () => {
         <div className="border border-white/15 bg-[#000000] divide-y divide-white/10 font-mono rounded-none">
           
           {/* Telemetry Row 1: Solar Illumination */}
-          <div className="p-2.5 flex items-center justify-between gap-2">
+          <div className="p-2.5 flex items-center justify-between gap-2 h-[46px]">
             <div className="flex flex-col gap-0.5 min-w-0">
               <div className="flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 bg-[#ECC068] shrink-0" />
@@ -871,7 +1032,7 @@ export const MissionBrowserPage: React.FC = () => {
           </div>
 
           {/* Telemetry Row 2: Earth Direct Line-of-Sight */}
-          <div className="p-2.5 flex items-center justify-between gap-2">
+          <div className="p-2.5 flex items-center justify-between gap-2 h-[46px]">
             <div className="flex flex-col gap-0.5 min-w-0">
               <div className="flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 bg-[#58D8D0] shrink-0" />
@@ -891,7 +1052,7 @@ export const MissionBrowserPage: React.FC = () => {
           </div>
 
           {/* Telemetry Row 3: LOLA Topography Slope */}
-          <div className="p-2.5 flex items-center justify-between gap-2">
+          <div className="p-2.5 flex items-center justify-between gap-2 h-[46px]">
             <div className="flex flex-col gap-0.5 min-w-0">
               <div className="flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 bg-emerald-400 shrink-0" />
@@ -910,6 +1071,45 @@ export const MissionBrowserPage: React.FC = () => {
             </span>
           </div>
 
+        </div>
+
+        {/* 24-Hour Horizon & Illumination Summary (Fixed Container) */}
+        <div className="p-2.5 bg-black/80 border border-white/10 flex flex-col gap-1.5 font-mono text-[10.5px] min-h-[68px]">
+          <span className="text-[9px] uppercase tracking-wider text-white/50 font-bold">
+            24-HOUR HORIZON WINDOW SUMMARY
+          </span>
+          <div className="grid grid-cols-3 gap-2 pt-1 border-t border-white/5">
+            <div className="flex flex-col">
+              <span className="text-white/40 text-[9px]">SUNLIGHT</span>
+              {siteAnalysis?.next24HoursSummary ? (
+                <span className="text-[#ECC068] font-bold tabular-nums">
+                  {siteAnalysis.next24HoursSummary.sunlightTotalHours.toFixed(1)}h ({siteAnalysis.next24HoursSummary.sunlightPercentage.toFixed(0)}%)
+                </span>
+              ) : (
+                <div className="h-4 w-16 bg-white/10 animate-pulse mt-0.5" />
+              )}
+            </div>
+            <div className="flex flex-col">
+              <span className="text-white/40 text-[9px]">EARTH DTE</span>
+              {siteAnalysis?.next24HoursSummary ? (
+                <span className="text-[#58D8D0] font-bold tabular-nums">
+                  {siteAnalysis.next24HoursSummary.earthVisibilityTotalHours.toFixed(1)}h ({siteAnalysis.next24HoursSummary.earthVisibilityPercentage.toFixed(0)}%)
+                </span>
+              ) : (
+                <div className="h-4 w-16 bg-white/10 animate-pulse mt-0.5" />
+              )}
+            </div>
+            <div className="flex flex-col">
+              <span className="text-white/40 text-[9px]">SIMULTANEOUS</span>
+              {siteAnalysis?.next24HoursSummary ? (
+                <span className="text-emerald-400 font-bold tabular-nums">
+                  {siteAnalysis.next24HoursSummary.bothVisibilityTotalHours.toFixed(1)}h
+                </span>
+              ) : (
+                <div className="h-4 w-12 bg-white/10 animate-pulse mt-0.5" />
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Overall Site Assessment Box */}
@@ -965,6 +1165,258 @@ export const MissionBrowserPage: React.FC = () => {
               </div>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Synchronized Temporal Clock */}
+      {renderTemporalClock()}
+    </div>
+  );
+
+  // ---------------------------------------------------------------------------
+  // Helper render for Multi-Site Comparison panel content (Dual Split mode)
+  // ---------------------------------------------------------------------------
+  const renderSiteComparisonPanel = () => (
+    <div className="flex flex-col gap-4">
+      <div className="bg-[#08090C] border border-white/15 p-3.5 sm:p-4 flex flex-col gap-3 rounded-none relative shadow-lg">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
+          <span className="font-mono text-xs uppercase tracking-[0.2em] font-bold text-white flex items-center gap-2">
+            <Sliders size={13} className="text-[#58D8D0]" />
+            <span>03 // MULTI-SITE COMPARISON</span>
+          </span>
+          <span className="font-mono text-[9.5px] text-white/50 tracking-widest uppercase">
+            {selectedForCompare.length} SITES
+          </span>
+        </div>
+
+        {/* Window Selector & Refresh */}
+        <div className="flex flex-wrap items-center justify-between gap-2 py-1">
+          <div className="flex items-center gap-1 font-mono text-[10px]">
+            <span className="text-white/40 uppercase mr-1">WINDOW:</span>
+            {[
+              { hrs: 24, label: '24H' },
+              { hrs: 48, label: '48H' },
+              { hrs: 72, label: '72H' },
+              { hrs: 708, label: '708H' },
+            ].map((item) => (
+              <button
+                key={item.hrs}
+                type="button"
+                onClick={() => setCompareDurationHours(item.hrs)}
+                className={`px-2 py-0.5 border uppercase transition-all cursor-pointer font-bold rounded-none ${
+                  compareDurationHours === item.hrs
+                    ? 'bg-white text-black border-white'
+                    : 'bg-black/80 text-white/60 hover:text-white border-white/20'
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={handleRunComparison}
+            disabled={isComparing}
+            className="px-2.5 py-1 bg-white/10 hover:bg-white/20 border border-white/20 text-white font-mono text-[10px] uppercase font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
+          >
+            <RefreshCw size={10} className={isComparing ? 'animate-spin' : ''} />
+            <span>{isComparing ? 'EVALUATING...' : 'REFRESH'}</span>
+          </button>
+        </div>
+
+        {/* Selected Sites Cards Grid */}
+        {selectedForCompare.length === 0 ? (
+          <div className="p-4 bg-black/60 border border-white/10 flex flex-col items-center justify-center gap-2 text-center py-8">
+            <span className="font-mono text-xs text-white/60">No sites currently selected for comparison.</span>
+            <button
+              type="button"
+              onClick={selectAllForCompare}
+              className="px-3 py-1 bg-white/10 hover:bg-white/20 border border-white/20 font-mono text-xs text-white uppercase font-bold transition-colors cursor-pointer"
+            >
+              Select All 8 Candidate Sites
+            </button>
+          </div>
+        ) : isComparing && !comparisonResults ? (
+          <div className="flex flex-col gap-2.5 max-h-[460px] overflow-y-auto pr-1 scrollbar-thin">
+            {selectedForCompare.map((id) => (
+              <div key={id} className="bg-[#000000] border border-white/15 p-3 flex flex-col gap-2.5 h-[130px] rounded-none select-none">
+                <div className="flex items-center justify-between border-b border-white/10 pb-1.5">
+                  <div className="h-4 w-20 bg-white/10 animate-pulse" />
+                  <div className="h-4 w-16 bg-white/10 animate-pulse" />
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 bg-white/10 animate-pulse border border-white/20 shrink-0" />
+                  <div className="flex flex-col gap-1 flex-1">
+                    <div className="h-3 w-32 bg-white/10 animate-pulse" />
+                    <div className="h-2.5 w-24 bg-white/5 animate-pulse" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-white/5">
+                  <div className="h-2.5 bg-white/5 animate-pulse" />
+                  <div className="h-2.5 bg-white/5 animate-pulse" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2.5 max-h-[460px] overflow-y-auto pr-1 scrollbar-thin">
+            {selectedForCompare.map((id) => {
+              const site = candidateSites.find((c) => c.id === id);
+              if (!site) return null;
+
+              const compItem = comparisonResults?.sites?.find((s) => s.site.id === site.id);
+              const rankIndex = comparisonResults?.ranking?.indexOf(site.id) ?? -1;
+              const isBestRank = rankIndex === 0;
+              const isActive = site.id === selectedSiteId;
+
+              return (
+                <div
+                  key={site.id}
+                  className={`bg-[#000000] border p-3 flex flex-col gap-2.5 relative transition-all rounded-none ${
+                    isActive
+                      ? 'border-[#58D8D0]/60 border-l-2 border-l-[#58D8D0] bg-white/[0.04]'
+                      : isBestRank
+                      ? 'border-white/40 bg-white/[0.02]'
+                      : 'border-white/15 bg-black/60 hover:border-white/25'
+                  }`}
+                >
+                  {/* Top Bar: Rank, Score, and Actions */}
+                  <div className="flex items-center justify-between border-b border-white/10 pb-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className={`px-1.5 py-0.5 font-mono text-[8.5px] font-bold uppercase tracking-wider border rounded-none ${
+                        isBestRank
+                          ? 'bg-white text-black border-white font-extrabold'
+                          : 'bg-white/10 text-white/70 border-white/20'
+                      }`}>
+                        {rankIndex >= 0 ? `RANK #${rankIndex + 1}` : 'EVALUATING'}
+                      </span>
+                      <span className="font-mono text-[11px] font-bold text-white tabular-nums">
+                        SCORE: {compItem?.score !== undefined ? `${compItem.score.toFixed(1)}/100` : '—'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      {!isActive && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedSiteId(site.id)}
+                          className="px-1.5 py-0.5 text-[8.5px] font-mono uppercase bg-white/10 hover:bg-white/20 text-white/80 hover:text-white border border-white/20 transition-colors cursor-pointer"
+                          title="Set as Active Mission Target"
+                        >
+                          SET ACTIVE
+                        </button>
+                      )}
+                      {isActive && (
+                        <span className="px-1.5 py-0.5 text-[8.5px] font-mono uppercase bg-[#58D8D0]/20 text-[#58D8D0] border border-[#58D8D0]/40 font-bold">
+                          ACTIVE
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => removeFromCompare(site.id)}
+                        className="p-1 text-white/40 hover:text-red-400 hover:bg-white/10 transition-colors cursor-pointer"
+                        title="Remove from comparison"
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Site Header */}
+                  <div className="flex items-center gap-2">
+                    <img
+                      src={getSiteImage(site.id, site.name)}
+                      alt={site.name}
+                      className="w-8 h-8 object-cover border border-white/20 shrink-0 bg-black rounded-none"
+                    />
+                    <div className="flex flex-col min-w-0">
+                      <h4 className="font-bold text-[11px] text-white truncate font-mono uppercase tracking-wider">
+                        {site.name}
+                      </h4>
+                      <span className="text-[9.5px] font-mono text-white/50 tabular-nums">
+                        {Math.abs(site.latitudeDeg).toFixed(2)}°S, {site.longitudeDeg >= 0 ? `${site.longitudeDeg.toFixed(2)}°E` : `${Math.abs(site.longitudeDeg).toFixed(2)}°W`} • DATUM {site.elevationMeters > 0 ? `+${site.elevationMeters.toFixed(0)}m` : `${site.elevationMeters.toFixed(0)}m`}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Metrics Grid */}
+                  <div className="grid grid-cols-2 gap-1.5 font-mono text-[10px] pt-1 border-t border-white/5">
+                    <div className="flex justify-between py-0.5">
+                      <span className="text-white/50 flex items-center gap-1">
+                        <Sun size={10} className="text-[#ECC068]" /> Cumulative Sun:
+                      </span>
+                      <span className="text-white font-bold tabular-nums">
+                        {compItem?.metrics ? `${compItem.metrics.sunlightTotalHours.toFixed(1)}h` : '—'}
+                      </span>
+                    </div>
+
+                    <div className="flex justify-between py-0.5">
+                      <span className="text-white/50 flex items-center gap-1">
+                        <Clock size={10} className="text-amber-400" /> Max Streak:
+                      </span>
+                      <span className="text-amber-300 font-bold tabular-nums">
+                        {compItem?.metrics ? `${compItem.metrics.longestSunlightContinuousHours.toFixed(1)}h` : '—'}
+                      </span>
+                    </div>
+
+                    <div className="flex justify-between py-0.5">
+                      <span className="text-white/50 flex items-center gap-1">
+                        <Globe size={10} className="text-[#58D8D0]" /> Direct Earth:
+                      </span>
+                      <span className="text-[#58D8D0] font-bold tabular-nums">
+                        {compItem?.metrics ? `${compItem.metrics.earthVisibilityTotalHours.toFixed(1)}h` : '—'}
+                      </span>
+                    </div>
+
+                    <div className="flex justify-between py-0.5">
+                      <span className="text-white/50 flex items-center gap-1">
+                        <Mountain size={10} className="text-emerald-400" /> LOLA Slope:
+                      </span>
+                      <span className={`font-bold tabular-nums ${
+                        compItem?.metrics && compItem.metrics.slopeDeg <= 12 ? 'text-emerald-400' : 'text-amber-400'
+                      }`}>
+                        {compItem?.metrics ? `${compItem.metrics.slopeDeg.toFixed(1)}°` : '—'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Status Banner */}
+                  <div className="pt-1.5 border-t border-white/10 flex items-center justify-between text-[9.5px] font-mono">
+                    <span className="text-white/40 uppercase">STATUS</span>
+                    <span className={`font-bold uppercase tracking-wider ${
+                      compItem?.overallStatus === 'ALL_PASSED' ? 'text-emerald-400' : 'text-amber-400'
+                    }`}>
+                      {compItem?.overallStatus === 'ALL_PASSED' ? 'CONSTRAINTS MET' : 'MARGINAL'}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Bottom Actions */}
+        <div className="pt-2 border-t border-white/10 flex items-center justify-between text-[10px] font-mono">
+          <span className="text-white/40">SPICE DE440 & LOLA 80M EVALUATION</span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={selectAllForCompare}
+              className="text-[#58D8D0] hover:underline cursor-pointer"
+            >
+              Select All 8
+            </button>
+            <span className="text-white/20">|</span>
+            <button
+              type="button"
+              onClick={clearCompareSelection}
+              className="text-white/40 hover:text-white cursor-pointer"
+            >
+              Clear
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -1098,37 +1550,58 @@ export const MissionBrowserPage: React.FC = () => {
               {/* Quick Tab 01: Candidate Sites */}
               <button
                 type="button"
-                onClick={() => setActiveSidebarTab((prev) => (prev === 'sites' ? null : 'sites'))}
+                onClick={() => {
+                  if (activeSidebarTab === 'sites') {
+                    setActiveSidebarTab(null);
+                  } else {
+                    setActiveSidebarTab('sites');
+                    lastActiveTabRef.current = 'sites';
+                  }
+                }}
                 className={`flex items-center gap-2 px-3 py-1.5 border transition-all cursor-pointer font-mono text-xs uppercase tracking-wider ${
-                  activeSidebarTab === 'sites' || activeSidebarTab === 'both'
+                  activeSidebarTab === 'sites'
                     ? 'bg-[#58D8D0]/15 border-[#58D8D0] text-[#58D8D0] shadow-[0_0_12px_rgba(88,216,208,0.25)] font-bold'
                     : 'bg-black/90 border-white/20 text-white/70 hover:text-white hover:bg-white/10'
                 }`}
                 title="Toggle Candidate Sites Sidebar"
               >
-                <Compass size={13} className={activeSidebarTab === 'sites' || activeSidebarTab === 'both' ? 'text-[#58D8D0]' : 'text-white/60'} />
+                <Compass size={13} className={activeSidebarTab === 'sites' ? 'text-[#58D8D0]' : 'text-white/60'} />
                 <span>01 // CANDIDATE SITES ({candidateSites.length})</span>
               </button>
 
               {/* Quick Tab 02: Site Telemetry */}
               <button
                 type="button"
-                onClick={() => setActiveSidebarTab((prev) => (prev === 'telemetry' ? null : 'telemetry'))}
+                onClick={() => {
+                  if (activeSidebarTab === 'telemetry') {
+                    setActiveSidebarTab(null);
+                  } else {
+                    setActiveSidebarTab('telemetry');
+                    lastActiveTabRef.current = 'telemetry';
+                  }
+                }}
                 className={`flex items-center gap-2 px-3 py-1.5 border transition-all cursor-pointer font-mono text-xs uppercase tracking-wider ${
-                  activeSidebarTab === 'telemetry' || activeSidebarTab === 'both'
+                  activeSidebarTab === 'telemetry'
                     ? 'bg-[#ECC068]/15 border-[#ECC068] text-[#ECC068] shadow-[0_0_12px_rgba(236,192,104,0.25)] font-bold'
                     : 'bg-black/90 border-white/20 text-white/70 hover:text-white hover:bg-white/10'
                 }`}
                 title="Toggle Site Telemetry Sidebar"
               >
-                <BarChart2 size={13} className={activeSidebarTab === 'telemetry' || activeSidebarTab === 'both' ? 'text-[#ECC068]' : 'text-white/60'} />
+                <BarChart2 size={13} className={activeSidebarTab === 'telemetry' ? 'text-[#ECC068]' : 'text-white/60'} />
                 <span>02 // SITE TELEMETRY (LIVE)</span>
               </button>
 
               {/* Dual Split View */}
               <button
                 type="button"
-                onClick={() => setActiveSidebarTab((prev) => (prev === 'both' ? null : 'both'))}
+                onClick={() => {
+                  if (activeSidebarTab === 'both') {
+                    setActiveSidebarTab(null);
+                  } else {
+                    setActiveSidebarTab('both');
+                    lastActiveTabRef.current = 'both';
+                  }
+                }}
                 className={`hidden md:flex items-center gap-2 px-3 py-1.5 border transition-all cursor-pointer font-mono text-xs uppercase tracking-wider ${
                   activeSidebarTab === 'both'
                     ? 'bg-white/20 border-white text-white font-bold'
@@ -1137,7 +1610,25 @@ export const MissionBrowserPage: React.FC = () => {
                 title="Toggle Split View (Both Panels)"
               >
                 <Columns size={13} />
-                <span>DUAL SPLIT</span>
+                <span>DUAL SPLIT ({selectedForCompare.length})</span>
+              </button>
+
+              {/* Dedicated Compare Mission Scenarios Toggle Button */}
+              <button
+                type="button"
+                onClick={handleToggleScenarioComparison}
+                className={`flex items-center gap-2 px-3 py-1.5 border transition-all cursor-pointer font-mono text-xs uppercase tracking-wider font-bold ${
+                  showScenarioComparison
+                    ? 'bg-[#58D8D0] border-[#58D8D0] text-black shadow-[0_0_12px_rgba(88,216,208,0.3)]'
+                    : 'bg-black/90 border-[#58D8D0]/40 text-[#58D8D0] hover:bg-[#58D8D0]/10 hover:border-[#58D8D0]'
+                }`}
+                title={showScenarioComparison ? 'Hide Scenario Comparison' : 'Compare Mission Scenarios using current parameters'}
+              >
+                <Sliders size={13} />
+                <span>{showScenarioComparison ? 'HIDE COMPARISON' : 'COMPARE MISSION SCENARIOS'}</span>
+                {isComparisonStale && showScenarioComparison && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                )}
               </button>
             </div>
 
@@ -1145,7 +1636,14 @@ export const MissionBrowserPage: React.FC = () => {
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setActiveSidebarTab((prev) => (prev === null ? 'sites' : null))}
+                onClick={() => {
+                  if (activeSidebarTab === null) {
+                    setActiveSidebarTab(lastActiveTabRef.current || 'sites');
+                  } else {
+                    lastActiveTabRef.current = activeSidebarTab;
+                    setActiveSidebarTab(null);
+                  }
+                }}
                 className={`flex items-center gap-2 px-4 py-1.5 border transition-all cursor-pointer font-mono text-xs uppercase tracking-widest font-bold ${
                   activeSidebarTab === null
                     ? 'bg-[#58D8D0] border-[#58D8D0] text-black shadow-[0_0_20px_rgba(88,216,208,0.4)]'
@@ -1184,7 +1682,14 @@ export const MissionBrowserPage: React.FC = () => {
                 {/* Tool 01: Candidate Sites */}
                 <button
                   type="button"
-                  onClick={() => setActiveSidebarTab((prev) => (prev === 'sites' ? null : 'sites'))}
+                  onClick={() => {
+                    if (activeSidebarTab === 'sites') {
+                      setActiveSidebarTab(null);
+                    } else {
+                      setActiveSidebarTab('sites');
+                      lastActiveTabRef.current = 'sites';
+                    }
+                  }}
                   className={`w-10 h-10 lg:w-full lg:h-12 flex items-center justify-center relative group transition-colors cursor-pointer ${
                     activeSidebarTab === 'sites'
                       ? 'text-white'
@@ -1211,7 +1716,14 @@ export const MissionBrowserPage: React.FC = () => {
                 {/* Tool 02: Site Telemetry */}
                 <button
                   type="button"
-                  onClick={() => setActiveSidebarTab((prev) => (prev === 'telemetry' ? null : 'telemetry'))}
+                  onClick={() => {
+                    if (activeSidebarTab === 'telemetry') {
+                      setActiveSidebarTab(null);
+                    } else {
+                      setActiveSidebarTab('telemetry');
+                      lastActiveTabRef.current = 'telemetry';
+                    }
+                  }}
                   className={`w-10 h-10 lg:w-full lg:h-12 flex items-center justify-center relative group transition-colors cursor-pointer ${
                     activeSidebarTab === 'telemetry'
                       ? 'text-white'
@@ -1236,7 +1748,14 @@ export const MissionBrowserPage: React.FC = () => {
                 {/* Tool 03: Dual Split View (Both Sites & Telemetry) */}
                 <button
                   type="button"
-                  onClick={() => setActiveSidebarTab((prev) => (prev === 'both' ? null : 'both'))}
+                  onClick={() => {
+                    if (activeSidebarTab === 'both') {
+                      setActiveSidebarTab(null);
+                    } else {
+                      setActiveSidebarTab('both');
+                      lastActiveTabRef.current = 'both';
+                    }
+                  }}
                   className={`w-10 h-10 lg:w-full lg:h-12 flex items-center justify-center relative group transition-colors cursor-pointer ${
                     activeSidebarTab === 'both'
                       ? 'text-white'
@@ -1261,7 +1780,14 @@ export const MissionBrowserPage: React.FC = () => {
               <div className="flex flex-row lg:flex-col items-center gap-2 pb-0 lg:pb-1">
                 <button
                   type="button"
-                  onClick={() => setActiveSidebarTab((prev) => (prev ? null : 'sites'))}
+                  onClick={() => {
+                    if (activeSidebarTab) {
+                      lastActiveTabRef.current = activeSidebarTab;
+                      setActiveSidebarTab(null);
+                    } else {
+                      setActiveSidebarTab(lastActiveTabRef.current || 'sites');
+                    }
+                  }}
                   className="w-8 h-8 lg:w-9 lg:h-9 flex items-center justify-center text-white/45 hover:text-white hover:bg-white/10 rounded transition-colors cursor-pointer"
                   title={activeSidebarTab ? 'Collapse Sidebar (Esc / Close)' : 'Expand Sidebar'}
                 >
@@ -1301,7 +1827,7 @@ export const MissionBrowserPage: React.FC = () => {
                     {activeSidebarTab === 'both' && (
                       <>
                         <Columns size={14} className="text-white" />
-                        <span>01 + 02 // SITES & TELEMETRY</span>
+                        <span>01 + {dualSplitTab === 'comparison' ? '03 // SITES & COMPARISON' : '02 // SITES & TELEMETRY'}</span>
                       </>
                     )}
                   </span>
@@ -1313,7 +1839,10 @@ export const MissionBrowserPage: React.FC = () => {
                   <div className="flex items-center bg-black/50 border border-white/10 p-0.5 rounded text-[10px] font-mono">
                     <button
                       type="button"
-                      onClick={() => setActiveSidebarTab('sites')}
+                      onClick={() => {
+                        setActiveSidebarTab('sites');
+                        lastActiveTabRef.current = 'sites';
+                      }}
                       className={`px-2 py-0.5 transition-colors cursor-pointer ${
                         activeSidebarTab === 'sites'
                           ? 'bg-[#58D8D0]/20 text-[#58D8D0] font-bold'
@@ -1325,7 +1854,10 @@ export const MissionBrowserPage: React.FC = () => {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setActiveSidebarTab('telemetry')}
+                      onClick={() => {
+                        setActiveSidebarTab('telemetry');
+                        lastActiveTabRef.current = 'telemetry';
+                      }}
                       className={`px-2 py-0.5 transition-colors cursor-pointer ${
                         activeSidebarTab === 'telemetry'
                           ? 'bg-[#ECC068]/20 text-[#ECC068] font-bold'
@@ -1337,7 +1869,10 @@ export const MissionBrowserPage: React.FC = () => {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setActiveSidebarTab('both')}
+                      onClick={() => {
+                        setActiveSidebarTab('both');
+                        lastActiveTabRef.current = 'both';
+                      }}
                       className={`px-2 py-0.5 transition-colors cursor-pointer hidden sm:block ${
                         activeSidebarTab === 'both'
                           ? 'bg-white/20 text-white font-bold'
@@ -1375,11 +1910,43 @@ export const MissionBrowserPage: React.FC = () => {
                 )}
                 {activeSidebarTab === 'both' && (
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {/* Left Column: Candidate Sites Explorer */}
                     <div className="flex flex-col gap-4">
                       {renderCandidateSitesPanel()}
                     </div>
-                    <div className="flex flex-col gap-4">
-                      {renderSiteTelemetryPanel()}
+
+                    {/* Right Column: Multi-Site Comparison or Live Telemetry */}
+                    <div className="flex flex-col gap-3">
+                      {/* Dual Split Sub-Header Switcher */}
+                      <div className="flex items-center justify-between bg-[#0B0F14] border border-white/15 p-1.5 font-mono text-[10px]">
+                        <span className="text-white/50 uppercase tracking-wider pl-1 font-bold">PANE 2 VIEW:</span>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setDualSplitTab('comparison')}
+                            className={`px-2 py-0.5 font-bold uppercase transition-colors cursor-pointer rounded-none ${
+                              dualSplitTab === 'comparison'
+                                ? 'bg-[#58D8D0]/20 text-[#58D8D0] border border-[#58D8D0]/40'
+                                : 'text-white/50 hover:text-white border border-transparent'
+                            }`}
+                          >
+                            03 // COMPARISON ({selectedForCompare.length})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDualSplitTab('telemetry')}
+                            className={`px-2 py-0.5 font-bold uppercase transition-colors cursor-pointer rounded-none ${
+                              dualSplitTab === 'telemetry'
+                                ? 'bg-[#ECC068]/20 text-[#ECC068] border border-[#ECC068]/40'
+                                : 'text-white/50 hover:text-white border border-transparent'
+                            }`}
+                          >
+                            02 // LIVE TELEMETRY
+                          </button>
+                        </div>
+                      </div>
+
+                      {dualSplitTab === 'comparison' ? renderSiteComparisonPanel() : renderSiteTelemetryPanel()}
                     </div>
                   </div>
                 )}
@@ -1397,24 +1964,8 @@ export const MissionBrowserPage: React.FC = () => {
                   : 'scale-[0.998]'
               }`}
             >
-              {/* Unified 3D System Header Bar */}
-              <div className="flex flex-wrap items-center justify-between gap-2 mb-2 pb-1.5 border-b border-white/10 px-1">
-                <div className="flex flex-wrap items-center gap-1.5 font-mono text-xs font-bold uppercase tracking-wider">
-                  <div className="flex items-center gap-2 px-3 py-1.5 bg-[#070A0F] border border-[#58D8D0]/40 text-[#58D8D0] shadow-[0_0_15px_rgba(88,216,208,0.2)]">
-                    <Sun className="w-3.5 h-3.5 text-amber-400" />
-                    <span>UNIFIED HELIOCENTRIC SYSTEM (SUN → EARTH → MOON)</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-500/15 border border-emerald-500/40 text-emerald-300">
-                    <Globe className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>NASA MOON TREK WMTS INTEGRATED</span>
-                  </div>
-                </div>
-
-                <div className="hidden sm:flex items-center gap-2 text-[10px] font-mono text-slate-400">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>SYNCHRONIZED WITH CANDIDATE SITE DATE: {epochDate}</span>
-                </div>
-              </div>
+              {/* Section B1: Stabilized Simulation Status Header Bar */}
+              <SimulationStatusHeader epochDate={epochDate} />
 
               <LunarInteractiveMap
                 sites={candidateSites}
@@ -1453,189 +2004,62 @@ export const MissionBrowserPage: React.FC = () => {
           />
 
           {/* =========================================================================
-              4. RAPID MISSION SCENARIO COMPARISON WORKBENCH
+              4. RAPID MISSION SCENARIO COMPARISON WORKBENCH (ON-DEMAND)
           ========================================================================= */}
-          <ScenarioComparisonWorkbench
-            availableSites={candidateSites}
-            activeSiteId={selectedSiteId}
-            activeEpochDate={epochDate}
-            activeEpochHour={epochHour}
-            onApplyScenarioTo3D={(siteId, dateIso, hourUtc) => {
-              setSelectedSiteId(siteId);
-              setEpochDate(dateIso);
-              setEpochHour(hourUtc);
-              const mapElement = document.getElementById('mission-simulator-view');
-              if (mapElement) {
-                mapElement.scrollIntoView({ behavior: 'smooth' });
-              }
-            }}
-          />
-
-          {/* =========================================================================
-              5. INTEGRATED MULTI-SITE TRADE-OFF & COMPARISON MATRIX
-          ========================================================================= */}
-          <div className="w-full bg-[#08090C] border border-white/15 p-5 sm:p-6 flex flex-col gap-5 rounded-none">
-            
-            {/* Header & Window Duration Switcher */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-4">
-              <div className="flex flex-col gap-1">
-                <span className="font-mono text-xs uppercase tracking-[0.2em] font-bold text-white flex items-center gap-2">
-                  <Sliders size={13} className="text-white" />
-                  <span>05 // CANDIDATE SITES TRADE-OFF MATRIX</span>
-                </span>
-                <span className="text-xs text-white/50 font-light font-mono">
-                  Evaluating {selectedForCompare.length} staged candidate landing sites across a synchronized {compareDurationHours}-hour timeline.
-                </span>
+          <div id="scenario-comparison-section" className="w-full flex flex-col gap-3">
+            {/* Section Header Bar with dedicated toggle */}
+            <div className="w-full bg-[#0B0F14] border border-white/15 px-4 py-3 flex flex-wrap items-center justify-between gap-3 shadow-md">
+              <div className="flex items-center gap-2.5">
+                <Sliders size={15} className="text-[#58D8D0]" />
+                <div className="flex flex-col">
+                  <span className="font-mono text-xs uppercase tracking-[0.2em] font-bold text-white flex items-center gap-2">
+                    <span>04 // RAPID MISSION SCENARIO COMPARISON</span>
+                    <span className="text-[10px] text-white/40 font-normal">({selectedForCompare.length} SITES STAGED)</span>
+                  </span>
+                  <span className="font-mono text-[10.5px] text-white/50">
+                    Multi-landing-site trade-off analysis utilizing active mission parameters.
+                  </span>
+                </div>
               </div>
 
-              {/* Mission Window Selector */}
-              <div className="flex items-center gap-1 font-mono text-xs">
-                <span className="text-white/40 text-[9.5px] uppercase mr-1">WINDOW:</span>
-                {[
-                  { hrs: 24, label: '24H' },
-                  { hrs: 48, label: '48H' },
-                  { hrs: 72, label: '72H' },
-                  { hrs: 708, label: 'LUNAR DAY (708H)' },
-                ].map((item) => (
-                  <button
-                    key={item.hrs}
-                    type="button"
-                    onClick={() => setCompareDurationHours(item.hrs)}
-                    className={`px-2.5 py-1 border uppercase text-[10px] transition-all cursor-pointer font-bold rounded-none ${
-                      compareDurationHours === item.hrs
-                        ? 'bg-white text-black border-white'
-                        : 'bg-black/80 text-white/60 hover:text-white border-white/20 hover:bg-white/10'
-                    }`}
-                  >
-                    {item.label}
-                  </button>
-                ))}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleToggleScenarioComparison}
+                  className={`px-4 py-2 border font-mono text-xs uppercase tracking-[0.16em] font-bold flex items-center gap-2 cursor-pointer transition-all ${
+                    showScenarioComparison
+                      ? 'bg-white/10 hover:bg-white/20 text-white border-white/30'
+                      : 'bg-[#58D8D0] hover:bg-[#4ec4bc] text-black border-[#58D8D0] shadow-[0_0_15px_rgba(88,216,208,0.25)]'
+                  }`}
+                >
+                  <Sliders size={13} />
+                  <span>{showScenarioComparison ? 'HIDE COMPARISON' : 'COMPARE MISSION SCENARIOS'}</span>
+                </button>
               </div>
             </div>
 
-            {/* Side-by-Side Comparison Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {selectedForCompare.map((id) => {
-                const site = candidateSites.find((c) => c.id === id);
-                if (!site) return null;
-
-                const compItem = comparisonResults?.sites?.find((s) => s.site.id === site.id);
-                const rankIndex = comparisonResults?.ranking?.indexOf(site.id) ?? -1;
-                const isBestRank = rankIndex === 0;
-
-                return (
-                  <div
-                    key={site.id}
-                    className={`bg-[#000000] border p-4 flex flex-col justify-between gap-4 relative transition-all rounded-none ${
-                      isBestRank
-                        ? 'border-white/50 border-t-2 border-t-[#58D8D0] bg-white/[0.03]'
-                        : 'border-white/15 bg-black/60 hover:border-white/30'
-                    }`}
-                  >
-                    <div className="flex flex-col gap-3.5">
-                      {/* Rank & Score Badge */}
-                      <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                        <span className={`px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider border rounded-none ${
-                          isBestRank
-                            ? 'bg-white text-black border-white font-extrabold'
-                            : 'bg-white/10 text-white/70 border-white/20'
-                        }`}>
-                          {rankIndex >= 0 ? `RANK #${rankIndex + 1}` : 'EVALUATING'}
-                        </span>
-                        <span className="font-mono text-xs font-bold text-white tabular-nums">
-                          SCORE: {compItem?.score !== undefined ? `${compItem.score.toFixed(1)}/100` : '—'}
-                        </span>
-                      </div>
-
-                      {/* Site Header */}
-                      <div className="flex items-center gap-2.5">
-                        <img
-                          src={getSiteImage(site.id, site.name)}
-                          alt={site.name}
-                          className="w-9 h-9 object-cover border border-white/20 shrink-0 bg-black rounded-none"
-                        />
-                        <div className="flex flex-col">
-                          <h4 className="font-bold text-xs text-white truncate font-mono uppercase tracking-wider">
-                            {site.name}
-                          </h4>
-                          <span className="text-[10px] font-mono text-white/50 tabular-nums">
-                            {Math.abs(site.latitudeDeg).toFixed(2)}°S, {site.longitudeDeg >= 0 ? `${site.longitudeDeg.toFixed(2)}°E` : `${Math.abs(site.longitudeDeg).toFixed(2)}°W`}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Metric Specifications */}
-                      <div className="flex flex-col gap-1.5 font-mono text-xs">
-                        <div className="flex justify-between py-1 border-b border-white/5 text-[10.5px]">
-                          <span className="text-white/50 flex items-center gap-1.5">
-                            <Sun size={11} className="text-[#ECC068]" /> Cumulative Sun:
-                          </span>
-                          <span className="text-white font-bold tabular-nums">
-                            {compItem?.metrics ? `${compItem.metrics.sunlightTotalHours.toFixed(1)} hrs` : '—'}
-                          </span>
-                        </div>
-
-                        <div className="flex justify-between py-1 border-b border-white/5 text-[10.5px]">
-                          <span className="text-white/50 flex items-center gap-1.5">
-                            <Clock size={11} className="text-amber-400" /> Max Streak:
-                          </span>
-                          <span className="text-amber-300 font-bold tabular-nums">
-                            {compItem?.metrics ? `${compItem.metrics.longestSunlightContinuousHours.toFixed(1)} hrs` : '—'}
-                          </span>
-                        </div>
-
-                        <div className="flex justify-between py-1 border-b border-white/5 text-[10.5px]">
-                          <span className="text-white/50 flex items-center gap-1.5">
-                            <Globe size={11} className="text-[#58D8D0]" /> Direct Earth LOS:
-                          </span>
-                          <span className="text-[#58D8D0] font-bold tabular-nums">
-                            {compItem?.metrics ? `${compItem.metrics.earthVisibilityTotalHours.toFixed(1)} hrs` : '—'}
-                          </span>
-                        </div>
-
-                        <div className="flex justify-between py-1 border-b border-white/5 text-[10.5px]">
-                          <span className="text-white/50 flex items-center gap-1.5">
-                            <Mountain size={11} className="text-emerald-400" /> LOLA Slope:
-                          </span>
-                          <span className={`font-bold tabular-nums ${
-                            compItem?.metrics && compItem.metrics.slopeDeg <= 12 ? 'text-emerald-400' : 'text-amber-400'
-                          }`}>
-                            {compItem?.metrics ? `${compItem.metrics.slopeDeg.toFixed(1)}°` : '—'}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Overall Compliance */}
-                    <div className="pt-2.5 border-t border-white/10 flex items-center justify-between text-[10px] font-mono">
-                      <span className="text-white/40 uppercase">STATUS</span>
-                      <span className={`font-bold uppercase tracking-wider ${
-                        compItem?.overallStatus === 'ALL_PASSED' ? 'text-emerald-400' : 'text-amber-400'
-                      }`}>
-                        {compItem?.overallStatus === 'ALL_PASSED' ? 'CONSTRAINTS MET' : 'MARGINAL'}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Re-calculate Button Strip */}
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2 border-t border-white/10">
-              <span className="text-xs text-white/50 font-mono">
-                Barycentric time extrapolation using NASA JPL SPICE DE440 ephemerides.
-              </span>
-              <button
-                type="button"
-                onClick={handleRunComparison}
-                disabled={isComparing}
-                className="w-full sm:w-auto px-6 py-2.5 border border-white hover:bg-white text-white hover:text-black font-mono text-xs uppercase tracking-[0.2em] font-bold transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer rounded-none"
-              >
-                <RefreshCw size={12} className={isComparing ? 'animate-spin' : ''} />
-                <span>{isComparing ? 'EVALUATING CONSTRAINTS...' : 'REFRESH TRADE-OFF MATRIX'}</span>
-              </button>
-            </div>
-
+            {showScenarioComparison && (
+              <ScenarioComparisonWorkbench
+                availableSites={candidateSites}
+                activeSiteId={selectedSiteId}
+                selectedForCompare={selectedForCompare}
+                activeEpochDate={epochDate}
+                activeEpochHour={epochHour}
+                compareDurationHours={compareDurationHours}
+                comparisonResults={scenarioComparisonResults}
+                isLoading={isEvaluatingComparison}
+                error={scenarioComparisonError}
+                isStale={isComparisonStale}
+                onApplyScenarioTo3D={(siteId) => {
+                  setSelectedSiteId(siteId);
+                  const mapElement = document.getElementById('mission-simulator-view');
+                  if (mapElement) {
+                    mapElement.scrollIntoView({ behavior: 'smooth' });
+                  }
+                }}
+                onReevaluate={executeScenarioComparison}
+              />
+            )}
           </div>
 
         </div>

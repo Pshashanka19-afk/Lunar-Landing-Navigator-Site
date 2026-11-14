@@ -310,7 +310,7 @@ export const MultiTrackTimeline: React.FC<MultiTrackTimelineProps> = ({
   const activePoint: TimelinePoint | null = points[activeCursorIndex] || null;
 
   return (
-    <div className="w-full bg-[#08090C] border border-white/15 p-4 sm:p-6 flex flex-col gap-5 rounded-none">
+    <div className="w-full bg-[#08090C] border border-white/15 p-4 sm:p-6 flex flex-col gap-5 rounded-none shadow-lg">
       {/* Top Header & Duration Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-3">
         <div className="flex flex-col gap-0.5">
@@ -354,6 +354,55 @@ export const MultiTrackTimeline: React.FC<MultiTrackTimelineProps> = ({
         <div className="p-3 bg-red-950/60 border border-red-500/40 text-red-200 font-mono text-xs flex items-center gap-2">
           <AlertCircle size={14} className="text-red-400" />
           <span>{error}</span>
+        </div>
+      ) : isLoading && !timelineData ? (
+        /* Fixed Skeleton Layout: Matches exact dimensions, zero layout shift */
+        <div className="flex flex-col gap-5 select-none animate-pulse">
+          {/* 5 Quick Metrics Cards Placeholder */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2.5 font-mono text-xs">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="p-2.5 bg-black/80 border border-white/10 flex flex-col justify-between gap-2 h-[76px] rounded-none">
+                <div className="h-3 w-24 bg-white/10 rounded-none" />
+                <div className="h-5 w-16 bg-white/10 rounded-none" />
+                <div className="h-2.5 w-20 bg-white/5 rounded-none" />
+              </div>
+            ))}
+          </div>
+
+          {/* Status Banner Placeholder */}
+          <div className="px-3 py-2 bg-[#101216] border border-white/15 flex items-center justify-between h-[38px] rounded-none">
+            <div className="h-3 w-48 bg-white/10 rounded-none" />
+            <div className="h-3 w-36 bg-white/5 rounded-none" />
+          </div>
+
+          {/* Color Legend Placeholder */}
+          <div className="p-2 bg-black/80 border border-white/10 flex items-center justify-between h-[34px] rounded-none">
+            <div className="h-3 w-64 bg-white/10 rounded-none" />
+            <div className="h-3 w-28 bg-white/5 rounded-none" />
+          </div>
+
+          {/* 3 Tracks Placeholder */}
+          <div className="flex flex-col gap-2 font-mono text-[10px]">
+            {['SUNLIGHT', 'DIRECT EARTH', 'DUAL OP'].map((label, idx) => (
+              <div key={idx} className="flex items-center gap-2">
+                <span className="w-24 shrink-0 text-white/40 font-bold text-[9px]">{label}</span>
+                <div className="flex-1 h-6 bg-black/80 border border-white/15 relative overflow-hidden rounded-none">
+                  <div className="h-full w-full bg-white/[0.04]" />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Day Metrics Placeholder */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+            {Array.from({ length: 7 }).map((_, i) => (
+              <div key={i} className="p-2 bg-black/80 border border-white/10 flex flex-col gap-1.5 h-[84px] rounded-none">
+                <div className="h-3 w-16 bg-white/10 rounded-none" />
+                <div className="h-4 w-12 bg-white/5 rounded-none" />
+                <div className="h-2.5 w-20 bg-white/5 rounded-none" />
+              </div>
+            ))}
+          </div>
         </div>
       ) : (
         <>
@@ -510,14 +559,14 @@ export const MultiTrackTimeline: React.FC<MultiTrackTimelineProps> = ({
                   <span className="text-[10px] text-white/50 uppercase">Compare Near-Side Sites:</span>
                   <button
                     type="button"
-                    onClick={() => onSelectSite('malapert-mountain')}
+                    onClick={() => onSelectSite('malapert-massif')}
                     className="px-2.5 py-1 bg-[#58D8D0]/15 hover:bg-[#58D8D0] text-[#58D8D0] hover:text-black border border-[#58D8D0]/40 text-[9.5px] font-bold uppercase tracking-wider transition-colors cursor-pointer"
                   >
                     Malapert Massif (46.7h Comm)
                   </button>
                   <button
                     type="button"
-                    onClick={() => onSelectSite('de-gerlache-rim-2')}
+                    onClick={() => onSelectSite('de-gerlache-rim')}
                     className="px-2.5 py-1 bg-white/10 hover:bg-white text-white hover:text-black border border-white/30 text-[9.5px] font-bold uppercase tracking-wider transition-colors cursor-pointer"
                   >
                     de Gerlache Rim (28h Comm)
