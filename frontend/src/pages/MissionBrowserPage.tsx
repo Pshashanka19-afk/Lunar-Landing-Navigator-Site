@@ -36,7 +36,6 @@ import { MoonTrekGlobe } from '../components/MoonTrekGlobe';
 import { MissionDatePicker } from '../components/MissionDatePicker';
 import { MultiTrackTimeline } from '../components/MultiTrackTimeline';
 import { ScenarioComparisonWorkbench } from '../components/ScenarioComparisonWorkbench';
-import { SimulationStatusHeader } from '../components/SimulationConfigToolbar';
 
 // Helper to retrieve authentic verified project image asset
 const getSiteImage = (id: string, name?: string): string => {
