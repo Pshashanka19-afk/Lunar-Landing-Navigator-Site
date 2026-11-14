@@ -27,8 +27,7 @@ import { Link, useRouter } from '../router';
 import { 
   lunarApi, 
   type SiteAnalysisData, 
-  type SiteComparisonResponse,
-  type ScienceHealth
+  type SiteComparisonResponse
 } from '../services/lunarApi';
 import { IMAGES } from '../data/images';
 import { LunarInteractiveMap, type MapSiteItem } from '../components/LunarInteractiveMap';
@@ -147,7 +146,6 @@ export const MissionBrowserPage: React.FC = () => {
 
   // Backend analytical data state
   const [siteAnalysis, setSiteAnalysis] = useState<SiteAnalysisData | null>(null);
-  const [scienceHealth, setScienceHealth] = useState<ScienceHealth | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
 
@@ -222,16 +220,9 @@ export const MissionBrowserPage: React.FC = () => {
     }
   }, [search]);
 
-  // Fetch verified candidate sites and science backend status on mount
+  // Fetch verified candidate sites on mount
   useEffect(() => {
     let isMounted = true;
-
-    lunarApi
-      .checkScienceHealth()
-      .then((health) => {
-        if (isMounted) setScienceHealth(health);
-      })
-      .catch(() => {});
 
     lunarApi
       .getDefaultSites()
@@ -1442,26 +1433,6 @@ export const MissionBrowserPage: React.FC = () => {
       ========================================================================= */}
       <section className="w-full pt-24 sm:pt-28 pb-10 sm:pb-14 px-4 sm:px-8 lg:px-16 bg-[#08090C] border-b border-white/15">
         <div className="max-w-7xl mx-auto flex flex-col gap-4">
-          <div className="flex flex-wrap items-center justify-between gap-4 font-mono text-xs">
-            <div className="flex items-center gap-2.5 text-white/70">
-              <span className="px-2.5 py-1 bg-white/10 border border-white/20 font-bold uppercase tracking-widest text-white">
-                EXPEDITION LUNARIS // MISSION BROWSER
-              </span>
-              <span className="text-white/30">//</span>
-              <span className="text-white/60 uppercase tracking-[0.2em]">
-                SOUTH POLE CANDIDATE EXPLORER
-              </span>
-            </div>
-            <div className="flex items-center gap-2 px-3 py-1 bg-black/80 border border-white/15 font-mono text-[11px] text-white/70">
-              <span className={`w-2 h-2 rounded-full ${scienceHealth?.ephemeris?.spice?.ready ? 'bg-emerald-400 animate-pulse' : 'bg-emerald-400'}`} />
-              <span className="tracking-widest uppercase">
-                {scienceHealth
-                  ? `${scienceHealth.operationalMode} // SPICE DE440 & LOLA DEM CONNECTED`
-                  : 'SPICE DE440 ONLINE // 60 FPS INTERPOLATED'}
-              </span>
-            </div>
-          </div>
-
           <h1 className="font-display-hero text-3xl sm:text-5xl lg:text-6xl font-bold uppercase tracking-tight text-[#E6E9F0] leading-tight">
             LUNAR SOUTH POLE MISSION BROWSER
           </h1>
