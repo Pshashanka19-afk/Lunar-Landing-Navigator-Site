@@ -4,14 +4,10 @@ import {
   Orbit, 
   ChevronDown, 
   Check, 
-  Sun, 
-  Globe, 
   ArrowRight, 
   Download, 
   Copy, 
-  Thermometer, 
   Clock, 
-  Compass,
   Sparkles,
   AlertCircle
 } from 'lucide-react';
@@ -762,32 +758,32 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
           ------------------------------------------------------------------- */}
           <div className="lg:col-span-5 flex flex-col gap-6">
             
-            <div className="bg-[#0A0D12] border border-white/[0.1] p-6 flex flex-col gap-7">
+            <div className="bg-[#121316] border border-white/[0.08] rounded-[24px] p-6 sm:p-8 flex flex-col gap-7 shadow-xl shadow-black/40">
               
-              <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
-                <span className="font-mono text-xs uppercase tracking-[0.2em] font-bold text-white flex items-center gap-2">
-                  <Rocket size={14} className="text-white/70" />
+              <div className="flex items-center justify-between border-b border-white/[0.08] pb-4">
+                <span className="font-sans text-sm uppercase tracking-wider font-bold text-white flex items-center gap-2">
+                  <Rocket size={15} className="text-white/80" />
                   <span>MISSION CONFIGURATION</span>
                 </span>
-                <span className="font-mono text-[10px] text-neutral-500 uppercase tracking-widest">
+                <span className="font-sans text-xs text-neutral-400 font-medium tracking-wide">
                   FLIGHT PARAMETERS
                 </span>
               </div>
 
               {/* Group A: Departure */}
-              <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-3.5">
                 <div className="flex items-center justify-between">
-                  <label className="font-mono text-xs uppercase text-neutral-400 tracking-wider">
+                  <label className="font-sans text-xs uppercase text-neutral-400 tracking-wider font-semibold">
                     01 // Departure Spaceport
                   </label>
-                  <span className="font-mono text-[10px] text-neutral-500 uppercase">EARTH</span>
+                  <span className="font-sans text-[11px] text-neutral-500 font-medium uppercase">EARTH</span>
                 </div>
 
                 <div className="relative">
                   <select
                     value={selectedLaunchSiteId}
                     onChange={(e) => setSelectedLaunchSiteId(e.target.value)}
-                    className="w-full h-11 px-3 bg-neutral-950 border border-white/15 hover:border-white/30 text-white font-mono text-xs focus:border-white outline-none rounded-none appearance-none pr-8 cursor-pointer transition-colors"
+                    className="w-full h-11 px-3.5 bg-[#0c0d10] border border-white/[0.12] hover:border-white/25 text-white font-sans text-sm focus:border-white outline-none rounded-xl appearance-none pr-8 cursor-pointer transition-colors"
                   >
                     {EARTH_LAUNCH_SITES.map((site) => (
                       <option key={site.id} value={site.id} className="bg-neutral-900 text-white">
@@ -799,53 +795,53 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
                 </div>
 
                 {/* Terrestrial Astrodynamics Spec Tile */}
-                <div className="p-3 bg-neutral-950 border border-white/[0.08] grid grid-cols-2 gap-2 text-[11px] font-mono text-neutral-300">
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-neutral-500 text-[9px] uppercase tracking-wider">COORDINATES</span>
+                <div className="p-4 bg-[#0c0d10] border border-white/[0.06] rounded-xl grid grid-cols-2 gap-3 text-xs font-sans text-neutral-300">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-neutral-500 text-[10px] uppercase tracking-wider font-medium">COORDINATES</span>
                     <span className="text-white font-semibold tabular-nums">
                       {fmt(Math.abs(currentLaunchSite?.latitudeDeg ?? 0), 2)}°{(currentLaunchSite?.latitudeDeg ?? 0) >= 0 ? 'N' : 'S'}, {fmt(Math.abs(currentLaunchSite?.longitudeDeg ?? 0), 2)}°{(currentLaunchSite?.longitudeDeg ?? 0) >= 0 ? 'E' : 'W'}
                     </span>
                   </div>
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-neutral-500 text-[9px] uppercase tracking-wider">EARTH ROTATION ASSIST</span>
+                  <div className="flex flex-col gap-1">
+                    <span className="text-neutral-500 text-[10px] uppercase tracking-wider font-medium">EARTH ROTATION ASSIST</span>
                     <span className="text-neutral-200 tabular-nums font-semibold">
                       +{Math.round(465.1 * Math.cos(((currentLaunchSite?.latitudeDeg ?? 0) * Math.PI) / 180))} m/s
                     </span>
                   </div>
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-neutral-500 text-[9px] uppercase tracking-wider">MIN INCLINATION</span>
-                    <span className="text-neutral-300 tabular-nums">i ≥ {fmt(currentLaunchSite?.nominalInclinationDeg ?? 0, 1)}°</span>
+                  <div className="flex flex-col gap-1">
+                    <span className="text-neutral-500 text-[10px] uppercase tracking-wider font-medium">MIN INCLINATION</span>
+                    <span className="text-neutral-300 tabular-nums font-medium">i ≥ {fmt(currentLaunchSite?.nominalInclinationDeg ?? 0, 1)}°</span>
                   </div>
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-neutral-500 text-[9px] uppercase tracking-wider">ELEVATION</span>
-                    <span className="text-neutral-300 tabular-nums">+{currentLaunchSite?.elevationMeters ?? 0} m MSL</span>
+                  <div className="flex flex-col gap-1">
+                    <span className="text-neutral-500 text-[10px] uppercase tracking-wider font-medium">ELEVATION</span>
+                    <span className="text-neutral-300 tabular-nums font-medium">+{currentLaunchSite?.elevationMeters ?? 0} m MSL</span>
                   </div>
                 </div>
 
                 {/* Launch Date & Time Inputs */}
-                <div className="grid grid-cols-1 sm:grid-cols-[1.18fr_0.91fr_0.91fr] gap-2 pt-2">
+                <div className="grid grid-cols-1 sm:grid-cols-[1.18fr_0.91fr_0.91fr] gap-2.5 pt-2">
                   <div className="flex flex-col gap-1.5 min-w-0">
-                    <label className="font-mono text-[10px] uppercase text-neutral-400 tracking-wider">
+                    <label className="font-sans text-[11px] uppercase text-neutral-400 tracking-wider font-medium">
                       Launch Date (UTC)
                     </label>
                     <MissionDatePicker
                       value={departureDate}
                       onChange={(newDate) => setDepartureDate(newDate)}
                       iconPosition="right"
-                      inputClassName="h-10 px-2.5 bg-neutral-950 border-white/15 hover:border-white/30"
+                      inputClassName="h-11 px-3 bg-[#0c0d10] border-white/[0.12] hover:border-white/25 rounded-xl font-sans text-xs text-white"
                       min="1900-01-01"
                       max="2050-01-01"
                     />
                   </div>
                   <div className="flex flex-col gap-1.5 min-w-0">
-                    <label className="font-mono text-[10px] uppercase text-neutral-400 tracking-wider">
+                    <label className="font-sans text-[11px] uppercase text-neutral-400 tracking-wider font-medium">
                       Launch Hour (UTC)
                     </label>
                     <div className="relative">
                       <select
                         value={departureHourUtc}
                         onChange={(e) => setDepartureHourUtc(parseInt(e.target.value, 10))}
-                        className="w-full h-10 px-2.5 bg-neutral-950 border border-white/15 hover:border-white/30 text-white font-mono text-xs focus:border-white outline-none rounded-none appearance-none pr-7 cursor-pointer"
+                        className="w-full h-11 px-2.5 bg-[#0c0d10] border border-white/[0.12] hover:border-white/25 text-white font-sans text-xs focus:border-white outline-none rounded-xl appearance-none pr-7 cursor-pointer"
                       >
                         {[0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22].map((h) => (
                           <option key={h} value={h} className="bg-neutral-900 text-white">
@@ -853,18 +849,18 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
                           </option>
                         ))}
                       </select>
-                      <ChevronDown size={14} className="absolute right-2.5 top-3 text-neutral-400 pointer-events-none" />
+                      <ChevronDown size={14} className="absolute right-2.5 top-3.5 text-neutral-400 pointer-events-none" />
                     </div>
                   </div>
                   <div className="flex flex-col gap-1.5 min-w-0">
-                    <label className="font-mono text-[10px] uppercase text-neutral-400 tracking-wider">
+                    <label className="font-sans text-[11px] uppercase text-neutral-400 tracking-wider font-medium">
                       Window Margin
                     </label>
                     <div className="relative">
                       <select
                         value={launchWindowDurationHours}
                         onChange={(e) => setLaunchWindowDurationHours(parseInt(e.target.value, 10))}
-                        className="w-full h-10 px-2.5 bg-neutral-950 border border-white/15 hover:border-white/30 text-white font-mono text-xs focus:border-white outline-none rounded-none appearance-none pr-7 cursor-pointer"
+                        className="w-full h-11 px-2.5 bg-[#0c0d10] border border-white/[0.12] hover:border-white/25 text-white font-sans text-xs focus:border-white outline-none rounded-xl appearance-none pr-7 cursor-pointer"
                       >
                         {[1, 2, 4, 8, 12].map((w) => (
                           <option key={w} value={w} className="bg-neutral-900 text-white">
@@ -872,30 +868,30 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
                           </option>
                         ))}
                       </select>
-                      <ChevronDown size={14} className="absolute right-2.5 top-3 text-neutral-400 pointer-events-none" />
+                      <ChevronDown size={14} className="absolute right-2.5 top-3.5 text-neutral-400 pointer-events-none" />
                     </div>
                   </div>
                 </div>
               </div>
 
               {/* Group B: Destination */}
-              <div className="flex flex-col gap-3 pt-4 border-t border-white/[0.08]">
+              <div className="flex flex-col gap-3.5 pt-4 border-t border-white/[0.08]">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <label className="font-mono text-xs uppercase text-neutral-400 tracking-wider">
+                    <label className="font-sans text-xs uppercase text-neutral-400 tracking-wider font-semibold">
                       02 // Lunar Landing Destination
                     </label>
-                    <span className="px-1.5 py-0.5 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-mono text-[9px] uppercase tracking-wider font-semibold">
+                    <span className="px-2 py-0.5 bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-sans text-[10px] uppercase tracking-wider font-semibold rounded-full">
                       ✓ {feasibleSites.length} FEASIBLE
                     </span>
                   </div>
 
                   {/* Filter Only Feasible Toggle */}
-                  <div className="flex items-center gap-1 font-mono text-[9px]">
+                  <div className="flex items-center gap-1 font-sans text-[10px]">
                     <button
                       type="button"
                       onClick={() => setFilterOnlyFeasible(true)}
-                      className={`px-2 py-0.5 uppercase tracking-wider transition-colors cursor-pointer ${
+                      className={`px-2.5 py-1 uppercase tracking-wider transition-colors cursor-pointer rounded-lg ${
                         filterOnlyFeasible
                           ? 'bg-white text-black font-bold'
                           : 'text-neutral-400 hover:text-white bg-neutral-900 border border-white/10'
@@ -906,7 +902,7 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
                     <button
                       type="button"
                       onClick={() => setFilterOnlyFeasible(false)}
-                      className={`px-2 py-0.5 uppercase tracking-wider transition-colors cursor-pointer ${
+                      className={`px-2.5 py-1 uppercase tracking-wider transition-colors cursor-pointer rounded-lg ${
                         !filterOnlyFeasible
                           ? 'bg-white text-black font-bold'
                           : 'text-neutral-400 hover:text-white bg-neutral-900 border border-white/10'
@@ -921,7 +917,7 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
                   <select
                     value={selectedDestinationSiteId}
                     onChange={(e) => setSelectedDestinationSiteId(e.target.value)}
-                    className="w-full h-11 px-3 bg-neutral-950 border border-white/15 hover:border-white/30 text-white font-mono text-xs focus:border-white outline-none rounded-none appearance-none pr-8 cursor-pointer transition-colors"
+                    className="w-full h-11 px-3.5 bg-[#0c0d10] border border-white/[0.12] hover:border-white/25 text-white font-sans text-sm focus:border-white outline-none rounded-xl appearance-none pr-8 cursor-pointer transition-colors"
                   >
                     {displayedDestinations.map((site) => {
                       const evalMatch = siteEvaluations.find((e) => e.site.id === site.id);
@@ -942,44 +938,44 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
                 </div>
 
                 {/* Target Landing Site Specs */}
-                <div className="p-3 bg-neutral-950 border border-white/[0.08] flex items-center justify-between font-mono text-xs text-neutral-300">
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-white font-bold">{currentDestination.name}</span>
-                    <span className="text-[10px] text-neutral-500">
+                <div className="p-4 bg-[#0c0d10] border border-white/[0.06] rounded-xl flex items-center justify-between font-sans text-xs text-neutral-300">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-white font-bold text-sm">{currentDestination.name}</span>
+                    <span className="text-[11px] text-neutral-400">
                       {fmt(Math.abs(currentDestination.latitudeDeg ?? 89.78), 2)}°S, {currentDestination.longitudeDeg >= 0 ? `${fmt(currentDestination.longitudeDeg, 2)}°E` : `${fmt(Math.abs(currentDestination.longitudeDeg), 2)}°W`}
                     </span>
                   </div>
-                  <div className="flex flex-col text-right gap-0.5">
-                    <span className="text-neutral-300 text-[11px] font-semibold tabular-nums">
+                  <div className="flex flex-col text-right gap-1">
+                    <span className="text-neutral-200 text-xs font-semibold tabular-nums">
                       {typeof currentDestination.elevationMeters === 'number' && currentDestination.elevationMeters > 0 ? '+' : ''}{fmt(currentDestination.elevationMeters ?? 0, 0)} m MSL
                     </span>
-                    <span className="text-[9px] text-neutral-500 uppercase">LOLA 80M DEM</span>
+                    <span className="text-[10px] text-neutral-500 uppercase font-medium">LOLA 80M DEM</span>
                   </div>
                 </div>
               </div>
 
               {/* Group C: Mission Timing */}
               <div className="flex flex-col gap-4 pt-4 border-t border-white/[0.08]">
-                <label className="font-mono text-xs uppercase text-neutral-400 tracking-wider">
+                <label className="font-sans text-xs uppercase text-neutral-400 tracking-wider font-semibold">
                   03 // Transit Duration &amp; Surface Stay
                 </label>
 
                 {/* Transfer Duration Chips */}
-                <div className="flex flex-col gap-1.5">
-                  <div className="flex justify-between items-center font-mono text-[11px]">
+                <div className="flex flex-col gap-2">
+                  <div className="flex justify-between items-center font-sans text-xs">
                     <span className="text-neutral-400">Transfer Duration:</span>
-                    <span className="text-white font-bold">{effectiveTransferHours} Hours ({fmt(effectiveTransferHours / 24, 1)} Days)</span>
+                    <span className="text-white font-semibold">{effectiveTransferHours} Hours ({fmt(effectiveTransferHours / 24, 1)} Days)</span>
                   </div>
-                  <div className="grid grid-cols-4 gap-1.5 font-mono text-xs">
+                  <div className="grid grid-cols-4 gap-2 font-sans text-xs">
                     {[72, 84, 96, 120].map((hours) => (
                       <button
                         key={hours}
                         type="button"
                         onClick={() => setCustomTransferHours(hours)}
-                        className={`py-2 border transition-colors cursor-pointer text-center ${
+                        className={`py-2.5 rounded-xl border transition-all cursor-pointer text-center font-medium ${
                           effectiveTransferHours === hours
-                            ? 'bg-white text-black font-extrabold border-white'
-                            : 'bg-neutral-950 text-neutral-400 border-white/15 hover:border-white/30 hover:text-white'
+                            ? 'bg-white text-black font-bold border-white shadow-md'
+                            : 'bg-[#0c0d10] text-neutral-400 border-white/[0.1] hover:border-white/30 hover:text-white'
                         }`}
                       >
                         {hours}h
@@ -989,12 +985,12 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
                 </div>
 
                 {/* Surface Stay Chips */}
-                <div className="flex flex-col gap-1.5">
-                  <div className="flex justify-between items-center font-mono text-[11px]">
+                <div className="flex flex-col gap-2">
+                  <div className="flex justify-between items-center font-sans text-xs">
                     <span className="text-neutral-400">Planned Surface Stay:</span>
-                    <span className="text-white font-bold">{surfaceMissionDurationHours} Hours ({fmt(surfaceMissionDurationHours / 24, 1)} Days)</span>
+                    <span className="text-white font-semibold">{surfaceMissionDurationHours} Hours ({fmt(surfaceMissionDurationHours / 24, 1)} Days)</span>
                   </div>
-                  <div className="grid grid-cols-4 gap-1.5 font-mono text-xs">
+                  <div className="grid grid-cols-4 gap-2 font-sans text-xs">
                     {[
                       { hours: 72, label: '3 Days' },
                       { hours: 168, label: '7 Days' },
@@ -1005,10 +1001,10 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
                         key={stay.hours}
                         type="button"
                         onClick={() => setSurfaceMissionDurationHours(stay.hours)}
-                        className={`py-2 border transition-colors cursor-pointer text-center ${
+                        className={`py-2.5 rounded-xl border transition-all cursor-pointer text-center font-medium ${
                           surfaceMissionDurationHours === stay.hours
-                            ? 'bg-white text-black font-extrabold border-white'
-                            : 'bg-neutral-950 text-neutral-400 border-white/15 hover:border-white/30 hover:text-white'
+                            ? 'bg-white text-black font-bold border-white shadow-md'
+                            : 'bg-[#0c0d10] text-neutral-400 border-white/[0.1] hover:border-white/30 hover:text-white'
                         }`}
                       >
                         {stay.label}
@@ -1019,14 +1015,14 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
 
                 {/* Spacecraft Architecture */}
                 <div className="flex flex-col gap-1.5 pt-1">
-                  <span className="font-mono text-[10px] uppercase text-neutral-400 tracking-wider">
+                  <span className="font-sans text-[11px] uppercase text-neutral-400 tracking-wider font-medium">
                     Spacecraft Architecture
                   </span>
                   <div className="relative">
                     <select
                       value={selectedProfileId}
                       onChange={(e) => setSelectedProfileId(e.target.value)}
-                      className="w-full h-10 px-3 bg-neutral-950 border border-white/15 hover:border-white/30 text-white font-mono text-xs focus:border-white outline-none rounded-none appearance-none pr-8 cursor-pointer"
+                      className="w-full h-11 px-3.5 bg-[#0c0d10] border border-white/[0.12] hover:border-white/25 text-white font-sans text-sm focus:border-white outline-none rounded-xl appearance-none pr-8 cursor-pointer"
                     >
                       {SPACECRAFT_PROFILES.map((prof) => (
                         <option key={prof.id} value={prof.id} className="bg-neutral-900 text-white">
@@ -1034,7 +1030,7 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
                         </option>
                       ))}
                     </select>
-                    <ChevronDown size={14} className="absolute right-3 top-3 text-neutral-400 pointer-events-none" />
+                    <ChevronDown size={14} className="absolute right-3 top-3.5 text-neutral-400 pointer-events-none" />
                   </div>
                 </div>
               </div>
@@ -1045,10 +1041,10 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
                   type="button"
                   disabled={isEvaluating}
                   onClick={handleAnalyzeMission}
-                  className={`w-full py-4 px-6 font-mono font-extrabold text-xs uppercase tracking-[0.22em] transition-all cursor-pointer flex items-center justify-center gap-2.5 rounded-none ${
+                  className={`w-full py-3.5 px-6 font-sans font-bold text-sm uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-2.5 rounded-xl ${
                     isEvaluating
                       ? 'bg-neutral-800 text-neutral-500 cursor-wait'
-                      : 'bg-white hover:bg-neutral-200 text-black shadow-lg active:scale-[0.99]'
+                      : 'bg-white hover:bg-neutral-200 text-black shadow-lg shadow-white/10 active:scale-[0.99]'
                   }`}
                 >
                   {isEvaluating ? (
@@ -1062,8 +1058,8 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
                 </button>
 
                 {evaluationError && (
-                  <div className="p-3 bg-rose-950/60 border border-rose-500/40 text-rose-300 font-mono text-xs flex items-center gap-2">
-                    <AlertCircle size={14} className="shrink-0 text-rose-400" />
+                  <div className="p-3.5 bg-rose-950/60 border border-rose-500/40 text-rose-300 font-sans text-xs rounded-xl flex items-center gap-2">
+                    <AlertCircle size={15} className="shrink-0 text-rose-400" />
                     <span>{evaluationError}</span>
                   </div>
                 )}
@@ -1078,23 +1074,23 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
           ------------------------------------------------------------------- */}
           <div className="lg:col-span-7 flex flex-col gap-4">
             
-            <div className="bg-[#0A0D12] border border-white/[0.1] p-5 flex flex-col gap-4">
+            <div className="bg-[#121316] border border-white/[0.08] rounded-[24px] p-6 sm:p-8 flex flex-col gap-5 shadow-xl shadow-black/40">
               
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.08] pb-3 font-mono text-xs">
-                <div className="flex items-center gap-2 text-white font-bold uppercase tracking-wider">
-                  <Orbit size={14} className="text-white/70" />
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.08] pb-4 font-sans text-xs">
+                <div className="flex items-center gap-2 text-white font-bold uppercase tracking-wider text-sm">
+                  <Orbit size={15} className="text-white/80" />
                   <span>3D TRANSLUNAR TRAJECTORY</span>
                 </div>
-                <div className="flex items-center gap-2 text-[11px] text-neutral-400">
+                <div className="flex items-center gap-2 text-xs text-neutral-400 font-medium">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                   <span>TOUCHDOWN: {currentDestination.name}</span>
                   <span className="text-white/30">•</span>
-                  <span className="text-white font-bold tabular-nums">{plannedArrivalEpochIso.substring(0, 16)} UTC</span>
+                  <span className="text-white font-semibold tabular-nums">{plannedArrivalEpochIso.substring(0, 16)} UTC</span>
                 </div>
               </div>
 
               {/* Embedded Three.js 3D Viewport */}
-              <div className="w-full h-[480px] bg-black border border-white/[0.06] relative overflow-hidden">
+              <div className="w-full h-[480px] bg-black border border-white/[0.06] rounded-2xl relative overflow-hidden">
                 <MissionTrajectoryVisualizer
                   launchSite={currentLaunchSite}
                   lunarDestination={currentDestination}
@@ -1107,7 +1103,7 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
               </div>
 
               {/* Trajectory Footnote */}
-              <div className="flex items-center justify-between font-mono text-[10px] text-neutral-500 pt-1">
+              <div className="flex items-center justify-between font-sans text-[11px] text-neutral-500 pt-1">
                 <span>ASTRODYNAMICS: PROGRADE TRANS-LUNAR INJECTION (TLI)</span>
                 <span>SPICE DE440 &bull; LOLA 80M DEM</span>
               </div>
@@ -1121,24 +1117,44 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
         {/* =======================================================================
             SECTION D — TRAJECTORY RESULTS & CANDIDATE LANDING-SITE FEASIBILITY
         ======================================================================= */}
-        <div className="flex flex-col gap-6 pt-6 border-t border-white/[0.08]">
+        <div className="flex flex-col gap-8 pt-8 border-t border-white/[0.08]">
           
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
-            <div className="flex flex-col gap-1">
-              <span className="font-mono text-xs uppercase tracking-[0.2em] text-white/50">
+            <div className="flex flex-col gap-1.5">
+              <span className="font-sans text-xs uppercase tracking-[0.2em] font-semibold text-white/50">
                 EVALUATION AT SCHEDULED ARRIVAL
               </span>
-              <h2 className="font-display-hero text-2xl sm:text-3xl font-bold uppercase tracking-tight text-white">
+              <h2 className="font-display-hero text-2xl sm:text-4xl font-bold uppercase tracking-tight text-white">
                 LANDING SITE FEASIBILITY ANALYSIS
               </h2>
             </div>
-            <span className="font-mono text-xs text-neutral-400">
-              ARRIVAL EPOCH: <strong className="text-white">{plannedArrivalEpochIso}</strong>
+            <span className="font-sans text-xs text-neutral-400 font-medium">
+              ARRIVAL EPOCH: <strong className="text-white font-semibold">{plannedArrivalEpochIso}</strong>
             </span>
           </div>
 
-          {/* Candidate Sites Feasibility Cards Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Top Feature Checks Banner (Starlink/Aerospace style) */}
+          <div className="flex flex-wrap items-center justify-center gap-6 sm:gap-10 text-xs sm:text-sm text-neutral-300 font-sans font-medium py-3.5 border-y border-white/[0.08] bg-[#0c0d10]/40 rounded-xl">
+            <span className="flex items-center gap-2">
+              <Check size={15} className="text-white shrink-0" />
+              <span>NASA SPICE DE440 Astrodynamics</span>
+            </span>
+            <span className="flex items-center gap-2">
+              <Check size={15} className="text-white shrink-0" />
+              <span>LOLA 80m Topography</span>
+            </span>
+            <span className="flex items-center gap-2">
+              <Check size={15} className="text-white shrink-0" />
+              <span>Direct LOS Raytracing</span>
+            </span>
+            <span className="flex items-center gap-2">
+              <Check size={15} className="text-white shrink-0" />
+              <span>Radiative Equilibrium Thermals</span>
+            </span>
+          </div>
+
+          {/* Candidate Sites Feasibility Cards Grid (Clean Starlink-style box styling) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {siteEvaluations.map((evalItem) => {
               const isSelected = evalItem.site.id === selectedDestinationSiteId;
               const isFeasible = evalItem.verdict === 'FEASIBLE';
@@ -1148,107 +1164,108 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
                 <div
                   key={evalItem.site.id}
                   onClick={() => setSelectedDestinationSiteId(evalItem.site.id)}
-                  className={`p-5 border transition-all cursor-pointer flex flex-col justify-between gap-4 rounded-none ${
+                  className={`rounded-[22px] p-7 sm:p-8 flex flex-col justify-between transition-all duration-200 cursor-pointer shadow-xl shadow-black/40 ${
                     isSelected
-                      ? 'bg-neutral-900/90 border-white'
-                      : 'bg-[#0A0D12] border-white/[0.1] hover:border-white/30 hover:bg-neutral-900/40'
+                      ? 'bg-[#16181d] border-2 border-white/70 ring-1 ring-white/20'
+                      : 'bg-[#121316] border border-white/[0.08] hover:border-white/25 hover:bg-[#15171b]'
                   }`}
                 >
-                  {/* Card Header */}
-                  <div className="flex items-start justify-between gap-3 border-b border-white/[0.08] pb-3">
-                    <div className="flex flex-col gap-0.5">
-                      <span className="font-bold text-sm text-white uppercase tracking-wider font-mono">
+                  <div>
+                    {/* Card Header & Badge */}
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <h3 className="font-sans font-bold text-xl sm:text-2xl text-white tracking-tight leading-snug">
                         {evalItem.site.name}
-                      </span>
-                      <span className="font-mono text-[11px] text-neutral-400 tabular-nums">
-                        {fmt(Math.abs(evalItem.site.latitudeDeg), 2)}°S, {evalItem.site.longitudeDeg >= 0 ? `${fmt(evalItem.site.longitudeDeg, 2)}°E` : `${fmt(Math.abs(evalItem.site.longitudeDeg), 2)}°W`} &bull; {fmt(evalItem.elevationMeters, 0)}m MSL
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <span className={`w-2 h-2 rounded-full ${
-                        isFeasible ? 'bg-emerald-400' : isMarginal ? 'bg-amber-400' : 'bg-rose-500'
-                      }`} />
-                      <span className={`font-mono text-xs font-bold uppercase tracking-wider ${
-                        isFeasible ? 'text-emerald-400' : isMarginal ? 'text-amber-400' : 'text-rose-400'
+                      </h3>
+                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-sans font-semibold uppercase tracking-wider shrink-0 flex items-center gap-1.5 ${
+                        isFeasible 
+                          ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30' 
+                          : isMarginal 
+                          ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30' 
+                          : 'bg-rose-500/15 text-rose-300 border border-rose-500/30'
                       }`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${isFeasible ? 'bg-emerald-400' : isMarginal ? 'bg-amber-400' : 'bg-rose-400'}`} />
                         {evalItem.verdict.replace('_', ' ')}
                       </span>
                     </div>
+
+                    {/* Subtitle / Description Text */}
+                    <p className="font-sans text-sm text-neutral-400 font-normal leading-relaxed mb-6">
+                      {evalItem.reasons[0] || 'Nominal polar exploration site with validated celestial lighting and communication lines.'}
+                    </p>
+
+                    {/* Feature Bullets (Clean spacing and typographic hierarchy) */}
+                    <ul className="space-y-3 font-sans text-sm text-neutral-200 mb-8">
+                      <li className="flex items-start gap-2.5">
+                        <span className="text-neutral-400 text-base leading-none select-none">•</span>
+                        <span>
+                          Sunlight: <strong className="text-white font-medium">{evalItem.sunElevationDeg >= 0 ? `+${fmt(evalItem.sunElevationDeg, 1)}°` : `${fmt(evalItem.sunElevationDeg, 1)}°`}</strong>
+                          <span className="text-neutral-400 ml-1.5">({evalItem.isSunLit ? 'Daylight' : 'Shadow'})</span>
+                        </span>
+                      </li>
+                      <li className="flex items-start gap-2.5">
+                        <span className="text-neutral-400 text-base leading-none select-none">•</span>
+                        <span>
+                          Earth Comms: <strong className="text-white font-medium">{evalItem.earthElevationDeg >= 0 ? `+${fmt(evalItem.earthElevationDeg, 1)}°` : `${fmt(evalItem.earthElevationDeg, 1)}°`}</strong>
+                          <span className="text-neutral-400 ml-1.5">({evalItem.isEarthVisible ? 'Direct Line-of-Sight' : 'Occluded'})</span>
+                        </span>
+                      </li>
+                      <li className="flex items-start gap-2.5">
+                        <span className="text-neutral-400 text-base leading-none select-none">•</span>
+                        <span>
+                          Terrain Slope: <strong className="text-white font-medium">{fmt(evalItem.slopeDeg, 1)}°</strong>
+                          <span className="text-neutral-400 ml-1.5">({evalItem.isSafeSlope ? 'Safe' : 'Steep'})</span>
+                        </span>
+                      </li>
+                      <li className="flex items-start gap-2.5">
+                        <span className="text-neutral-400 text-base leading-none select-none">•</span>
+                        <span>
+                          Surface Temp: <strong className="text-white font-medium">{evalItem.temperatureK} K</strong>
+                          <span className="text-neutral-400 ml-1.5">({evalItem.temperatureC}°C)</span>
+                        </span>
+                      </li>
+                      <li className="flex items-start gap-2.5">
+                        <span className="text-neutral-400 text-base leading-none select-none">•</span>
+                        <span>
+                          Elevation: <strong className="text-white font-medium">{fmt(evalItem.elevationMeters, 0)} m MSL</strong>
+                          <span className="text-neutral-400 ml-1.5 font-mono text-xs">({fmt(Math.abs(evalItem.site.latitudeDeg), 2)}°S, {evalItem.site.longitudeDeg >= 0 ? `${fmt(evalItem.site.longitudeDeg, 2)}°E` : `${fmt(Math.abs(evalItem.site.longitudeDeg), 2)}°W`})</span>
+                        </span>
+                      </li>
+                    </ul>
                   </div>
 
-                  {/* 4 Physical Key Factors */}
-                  <div className="grid grid-cols-2 gap-3 font-mono text-xs">
-                    <div className="flex flex-col gap-0.5 p-2.5 bg-neutral-950 border border-white/[0.06]">
-                      <span className="text-[10px] text-neutral-500 uppercase flex items-center gap-1">
-                        <Sun size={11} /> Sunlight Elevation
-                      </span>
-                      <span className="text-white font-bold tabular-nums">
-                        {evalItem.sunElevationDeg >= 0 ? `+${fmt(evalItem.sunElevationDeg, 1)}°` : `${fmt(evalItem.sunElevationDeg, 1)}°`}
-                        <span className="text-neutral-500 font-normal ml-1.5">
-                          ({evalItem.isSunLit ? 'Daylight' : 'Shadow'})
-                        </span>
-                      </span>
-                    </div>
-
-                    <div className="flex flex-col gap-0.5 p-2.5 bg-neutral-950 border border-white/[0.06]">
-                      <span className="text-[10px] text-neutral-500 uppercase flex items-center gap-1">
-                        <Globe size={11} /> Direct Earth Line-of-Sight
-                      </span>
-                      <span className="text-white font-bold tabular-nums">
-                        {evalItem.earthElevationDeg >= 0 ? `+${fmt(evalItem.earthElevationDeg, 1)}°` : `${fmt(evalItem.earthElevationDeg, 1)}°`}
-                        <span className="text-neutral-500 font-normal ml-1.5">
-                          ({evalItem.isEarthVisible ? 'Unobstructed' : 'Occluded'})
-                        </span>
-                      </span>
-                    </div>
-
-                    <div className="flex flex-col gap-0.5 p-2.5 bg-neutral-950 border border-white/[0.06]">
-                      <span className="text-[10px] text-neutral-500 uppercase flex items-center gap-1">
-                        <Compass size={11} /> Terrain Slope
-                      </span>
-                      <span className="text-white font-bold tabular-nums">
-                        {fmt(evalItem.slopeDeg, 1)}°
-                        <span className="text-neutral-500 font-normal ml-1.5">
-                          ({evalItem.isSafeSlope ? 'Safe' : 'Steep'})
-                        </span>
-                      </span>
-                    </div>
-
-                    <div className="flex flex-col gap-0.5 p-2.5 bg-neutral-950 border border-white/[0.06]">
-                      <span className="text-[10px] text-neutral-500 uppercase flex items-center gap-1">
-                        <Thermometer size={11} /> Surface Temperature
-                      </span>
-                      <span className="text-white font-bold tabular-nums">
-                        {evalItem.temperatureK} K
-                        <span className="text-neutral-500 font-normal ml-1.5">
-                          ({evalItem.temperatureC}°C)
-                        </span>
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Operational Assessment Statement */}
-                  <p className="text-xs text-neutral-400 font-sans leading-relaxed">
-                    {evalItem.reasons[0] || 'Nominal lunar surface operational criteria satisfied.'}
-                  </p>
-
-                  {/* Card Select Button */}
-                  <div className="pt-1">
+                  {/* Card Action Button */}
+                  <div className="pt-2">
                     <button
                       type="button"
-                      className={`w-full py-2.5 font-mono text-xs uppercase tracking-wider font-bold transition-all border ${
+                      className={`w-full py-3.5 px-4 rounded-xl font-sans text-sm font-semibold transition-all cursor-pointer flex items-center justify-center gap-2 ${
                         isSelected 
-                          ? 'bg-white text-black border-white' 
-                          : 'bg-transparent text-neutral-400 border-white/20 hover:text-white hover:border-white/50'
+                          ? 'bg-white text-black shadow-lg shadow-white/10 hover:bg-neutral-200' 
+                          : 'bg-[#1e2025] hover:bg-[#282b32] text-neutral-200 hover:text-white border border-white/10'
                       }`}
                     >
-                      {isSelected ? '✓ Selected Destination' : 'Select Target Site'}
+                      {isSelected ? (
+                        <>
+                          <Check size={16} className="text-black" />
+                          <span>Selected Destination</span>
+                        </>
+                      ) : (
+                        <span>Select Target Site</span>
+                      )}
                     </button>
                   </div>
                 </div>
               );
             })}
+          </div>
+
+          {/* Centered Disclaimer / Scientific Constraints Note */}
+          <div className="text-center max-w-4xl mx-auto space-y-1.5 mt-4 font-sans">
+            <p className="text-[11px] sm:text-xs text-neutral-500 leading-relaxed">
+              Landing site feasibility calculations are computed in real time using NASA JPL SPICE DE440 ephemerides and NASA LOLA digital elevation models.
+            </p>
+            <p className="text-[11px] sm:text-xs text-neutral-600 leading-relaxed">
+              Operational criteria require surface slope &lt; 10°, positive solar line-of-sight elevation, and uninterrupted direct Earth line-of-sight communication.
+            </p>
           </div>
 
         </div>
@@ -1257,44 +1274,44 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
             SECTION E — INTELLIGENT ALTERNATIVES (WHEN APPROPRIATE)
         ======================================================================= */}
         {recommendations.length > 0 && (
-          <div className="bg-[#0A0D12] border border-white/[0.1] p-6 flex flex-col gap-5">
+          <div className="bg-[#121316] border border-white/[0.08] rounded-[24px] p-6 sm:p-8 flex flex-col gap-6 shadow-xl shadow-black/40">
             
-            <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
-              <div className="flex flex-col gap-0.5">
-                <span className="font-mono text-xs uppercase tracking-[0.2em] font-bold text-white flex items-center gap-2">
-                  <Sparkles size={14} className="text-neutral-300" />
+            <div className="flex items-center justify-between border-b border-white/[0.08] pb-4">
+              <div className="flex flex-col gap-1">
+                <span className="font-sans text-sm uppercase tracking-wider font-bold text-white flex items-center gap-2">
+                  <Sparkles size={16} className="text-neutral-300" />
                   <span>RECOMMENDED MISSION ALTERNATIVES</span>
                 </span>
-                <span className="text-xs text-neutral-400">
+                <span className="text-xs sm:text-sm text-neutral-400 font-sans">
                   Alternative departure windows and candidate landing sites optimized for higher cumulative sunlight and direct communications.
                 </span>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               {recommendations.slice(0, 2).map((rec) => (
                 <div 
                   key={rec.id}
-                  className="p-5 bg-neutral-950 border border-white/[0.08] hover:border-white/25 flex flex-col justify-between gap-4 transition-colors"
+                  className="rounded-[20px] bg-[#16181d] border border-white/[0.08] hover:border-white/20 p-6 sm:p-7 flex flex-col justify-between gap-5 transition-all shadow-lg"
                 >
-                  <div className="flex flex-col gap-2">
+                  <div className="flex flex-col gap-2.5">
                     <div className="flex items-center justify-between">
-                      <span className="font-mono text-xs font-bold uppercase text-white tracking-wider">
+                      <span className="font-sans text-base font-bold text-white tracking-tight">
                         {rec.title}
                       </span>
-                      <span className="font-mono text-[10px] text-emerald-400 uppercase font-bold px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/30">
+                      <span className="font-sans text-[11px] text-emerald-400 uppercase font-bold px-2.5 py-0.5 bg-emerald-500/10 border border-emerald-500/30 rounded-full">
                         {rec.verdict}
                       </span>
                     </div>
 
-                    <p className="text-xs text-neutral-400 leading-relaxed">
+                    <p className="text-xs sm:text-sm text-neutral-400 font-sans leading-relaxed">
                       {rec.description}
                     </p>
 
-                    <div className="flex flex-col gap-1 pt-2 border-t border-white/[0.06] font-mono text-[11px] text-neutral-300">
+                    <div className="flex flex-col gap-2 pt-3 border-t border-white/[0.06] font-sans text-xs text-neutral-300">
                       {rec.expectedImprovements.map((imp, i) => (
-                        <span key={i} className="flex items-center gap-1.5 text-neutral-200">
-                          <Check size={12} className="text-emerald-400 shrink-0" />
+                        <span key={i} className="flex items-center gap-2 text-neutral-200">
+                          <Check size={13} className="text-emerald-400 shrink-0" />
                           <span>{imp}</span>
                         </span>
                       ))}
@@ -1304,10 +1321,10 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
                   <button
                     type="button"
                     onClick={() => handleApplyRecommendation(rec)}
-                    className="w-full py-2.5 font-mono text-xs uppercase tracking-wider font-bold bg-neutral-800 hover:bg-white text-white hover:text-black border border-white/20 hover:border-white transition-all flex items-center justify-center gap-2 cursor-pointer"
+                    className="w-full py-3 rounded-xl font-sans text-xs uppercase tracking-wider font-bold bg-[#1e2025] hover:bg-white text-white hover:text-black border border-white/15 hover:border-white transition-all flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <span>Apply This Scenario</span>
-                    <ArrowRight size={13} />
+                    <ArrowRight size={14} />
                   </button>
                 </div>
               ))}
@@ -1320,23 +1337,23 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
             SECTION F — SURFACE OPERATIONS TIMELINE
         ======================================================================= */}
         {activeSiteEval && (
-          <div className="bg-[#0A0D12] border border-white/[0.1] p-6 flex flex-col gap-5">
+          <div className="bg-[#121316] border border-white/[0.08] rounded-[24px] p-6 sm:p-8 flex flex-col gap-6 shadow-xl shadow-black/40">
             
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/[0.08] pb-3 font-mono text-xs">
-              <span className="font-bold uppercase tracking-wider text-white flex items-center gap-2">
-                <Clock size={14} className="text-neutral-400" />
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/[0.08] pb-4 font-sans text-xs">
+              <span className="font-bold text-sm uppercase tracking-wider text-white flex items-center gap-2">
+                <Clock size={16} className="text-neutral-400" />
                 <span>SURFACE OPERATIONS TIMELINE // {activeSiteEval.site.name}</span>
               </span>
-              <span className="text-neutral-400">
-                MISSION DURATION: <strong className="text-white">{surfaceMissionDurationHours} HOURS ({fmt(surfaceMissionDurationHours / 24, 1)} DAYS)</strong>
+              <span className="text-neutral-400 font-medium">
+                MISSION DURATION: <strong className="text-white font-semibold">{surfaceMissionDurationHours} HOURS ({fmt(surfaceMissionDurationHours / 24, 1)} DAYS)</strong>
               </span>
             </div>
 
             {/* Metric Summaries */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono text-xs">
-              <div className="p-3 bg-neutral-950 border border-white/[0.06] flex flex-col gap-1">
-                <span className="text-[10px] text-neutral-500 uppercase">Total Sunlight</span>
-                <span className="text-white font-bold text-sm tabular-nums">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5 font-sans text-xs">
+              <div className="p-4 bg-[#0c0d10] border border-white/[0.06] rounded-xl flex flex-col gap-1">
+                <span className="text-[10px] text-neutral-500 uppercase font-semibold">Total Sunlight</span>
+                <span className="text-white font-bold text-base tabular-nums">
                   {fmt(activeSiteEval.totalSunlightHours, 1)}h
                   <span className="text-neutral-500 text-xs ml-1 font-normal">
                     ({fmt((activeSiteEval.totalSunlightHours / Math.max(1, surfaceMissionDurationHours)) * 100, 0)}%)
@@ -1344,9 +1361,9 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
                 </span>
               </div>
 
-              <div className="p-3 bg-neutral-950 border border-white/[0.06] flex flex-col gap-1">
-                <span className="text-[10px] text-neutral-500 uppercase">Earth Line-of-Sight</span>
-                <span className="text-white font-bold text-sm tabular-nums">
+              <div className="p-4 bg-[#0c0d10] border border-white/[0.06] rounded-xl flex flex-col gap-1">
+                <span className="text-[10px] text-neutral-500 uppercase font-semibold">Earth Line-of-Sight</span>
+                <span className="text-white font-bold text-base tabular-nums">
                   {fmt(activeSiteEval.totalEarthHours, 1)}h
                   <span className="text-neutral-500 text-xs ml-1 font-normal">
                     ({fmt((activeSiteEval.totalEarthHours / Math.max(1, surfaceMissionDurationHours)) * 100, 0)}%)
@@ -1354,9 +1371,9 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
                 </span>
               </div>
 
-              <div className="p-3 bg-neutral-950 border border-white/[0.06] flex flex-col gap-1">
-                <span className="text-[10px] text-neutral-500 uppercase">Simultaneous Dual-Ops</span>
-                <span className="text-white font-bold text-sm tabular-nums">
+              <div className="p-4 bg-[#0c0d10] border border-white/[0.06] rounded-xl flex flex-col gap-1">
+                <span className="text-[10px] text-neutral-500 uppercase font-semibold">Simultaneous Dual-Ops</span>
+                <span className="text-white font-bold text-base tabular-nums">
                   {fmt(activeSiteEval.simultaneousHours, 1)}h
                   <span className="text-neutral-500 text-xs ml-1 font-normal">
                     ({fmt((activeSiteEval.simultaneousHours / Math.max(1, surfaceMissionDurationHours)) * 100, 0)}%)
@@ -1364,9 +1381,9 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
                 </span>
               </div>
 
-              <div className="p-3 bg-neutral-950 border border-white/[0.06] flex flex-col gap-1">
-                <span className="text-[10px] text-neutral-500 uppercase">Surface Temperature</span>
-                <span className="text-white font-bold text-sm tabular-nums">
+              <div className="p-4 bg-[#0c0d10] border border-white/[0.06] rounded-xl flex flex-col gap-1">
+                <span className="text-[10px] text-neutral-500 uppercase font-semibold">Surface Temperature</span>
+                <span className="text-white font-bold text-base tabular-nums">
                   {fmt(activeSiteEval.temperatureK, 1)} K
                   <span className="text-neutral-500 text-xs ml-1 font-normal">
                     ({fmt(activeSiteEval.temperatureC, 1)}°C)
@@ -1376,46 +1393,46 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
             </div>
 
             {/* Multi-Track Visual Timeline Bars */}
-            <div className="p-4 bg-neutral-950 border border-white/[0.08] flex flex-col gap-3 font-mono text-xs">
+            <div className="p-5 bg-[#0c0d10] border border-white/[0.06] rounded-xl flex flex-col gap-3.5 font-sans text-xs">
               
               {/* Sunlight Track */}
               <div className="flex items-center gap-3">
-                <span className="w-24 text-[11px] text-neutral-400">Sunlight</span>
-                <div className="flex-1 h-3 bg-neutral-900 border border-white/10 relative overflow-hidden flex">
+                <span className="w-24 text-xs text-neutral-400 font-medium">Sunlight</span>
+                <div className="flex-1 h-3.5 bg-neutral-900 border border-white/10 rounded-full relative overflow-hidden flex">
                   <div
-                    className="h-full bg-amber-400"
+                    className="h-full bg-amber-400 rounded-full"
                     style={{ width: `${Math.min(100, (activeSiteEval.totalSunlightHours / Math.max(1, surfaceMissionDurationHours)) * 100)}%` }}
                   />
                 </div>
-                <span className="w-12 text-right tabular-nums text-neutral-300 font-semibold">
+                <span className="w-12 text-right tabular-nums text-neutral-200 font-semibold">
                   {fmt((activeSiteEval.totalSunlightHours / Math.max(1, surfaceMissionDurationHours)) * 100, 0)}%
                 </span>
               </div>
 
               {/* Earth Track */}
               <div className="flex items-center gap-3">
-                <span className="w-24 text-[11px] text-neutral-400">Earth Comms</span>
-                <div className="flex-1 h-3 bg-neutral-900 border border-white/10 relative overflow-hidden flex">
+                <span className="w-24 text-xs text-neutral-400 font-medium">Earth Comms</span>
+                <div className="flex-1 h-3.5 bg-neutral-900 border border-white/10 rounded-full relative overflow-hidden flex">
                   <div
-                    className="h-full bg-[#58D8D0]"
+                    className="h-full bg-[#58D8D0] rounded-full"
                     style={{ width: `${Math.min(100, (activeSiteEval.totalEarthHours / Math.max(1, surfaceMissionDurationHours)) * 100)}%` }}
                   />
                 </div>
-                <span className="w-12 text-right tabular-nums text-neutral-300 font-semibold">
+                <span className="w-12 text-right tabular-nums text-neutral-200 font-semibold">
                   {fmt((activeSiteEval.totalEarthHours / Math.max(1, surfaceMissionDurationHours)) * 100, 0)}%
                 </span>
               </div>
 
               {/* Dual Ops Track */}
               <div className="flex items-center gap-3">
-                <span className="w-24 text-[11px] text-neutral-400">Dual-Ops</span>
-                <div className="flex-1 h-3 bg-neutral-900 border border-white/10 relative overflow-hidden flex">
+                <span className="w-24 text-xs text-neutral-400 font-medium">Dual-Ops</span>
+                <div className="flex-1 h-3.5 bg-neutral-900 border border-white/10 rounded-full relative overflow-hidden flex">
                   <div
-                    className="h-full bg-emerald-400"
+                    className="h-full bg-emerald-400 rounded-full"
                     style={{ width: `${Math.min(100, (activeSiteEval.simultaneousHours / Math.max(1, surfaceMissionDurationHours)) * 100)}%` }}
                   />
                 </div>
-                <span className="w-12 text-right tabular-nums text-neutral-300 font-semibold">
+                <span className="w-12 text-right tabular-nums text-neutral-200 font-semibold">
                   {fmt((activeSiteEval.simultaneousHours / Math.max(1, surfaceMissionDurationHours)) * 100, 0)}%
                 </span>
               </div>
@@ -1429,11 +1446,11 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
             SECTION G — FINAL FLIGHT DOSSIER & SURFACE BROWSER LAUNCH
         ======================================================================= */}
         {activeSiteEval && (
-          <div className="bg-[#0A0D12] border border-white/[0.15] p-6 sm:p-8 flex flex-col gap-6">
+          <div className="bg-[#121316] border border-white/[0.1] rounded-[24px] p-6 sm:p-8 flex flex-col gap-6 shadow-xl shadow-black/40">
             
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/[0.08] pb-5">
               <div className="flex flex-col gap-1">
-                <span className="font-mono text-xs uppercase tracking-[0.2em] text-white/50">
+                <span className="font-sans text-xs uppercase tracking-[0.2em] font-semibold text-white/50">
                   FINAL MISSION PLAN
                 </span>
                 <h3 className="font-display-hero text-xl sm:text-2xl font-bold uppercase tracking-tight text-white">
@@ -1441,68 +1458,68 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
                 </h3>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2 font-mono text-xs">
+              <div className="flex flex-wrap items-center gap-2 font-sans text-xs">
                 <button
                   type="button"
                   onClick={handleCopySummary}
-                  className="px-3.5 py-2 bg-neutral-900 hover:bg-neutral-800 text-white border border-white/20 transition-colors flex items-center gap-1.5 cursor-pointer"
+                  className="px-4 py-2.5 rounded-xl bg-[#0c0d10] hover:bg-neutral-800 text-white border border-white/15 transition-colors flex items-center gap-2 cursor-pointer font-medium"
                 >
-                  <Copy size={13} />
+                  <Copy size={14} />
                   <span>Copy Summary</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => handleExportReport('TXT')}
-                  className="px-3.5 py-2 bg-neutral-900 hover:bg-neutral-800 text-white border border-white/20 transition-colors flex items-center gap-1.5 cursor-pointer"
+                  className="px-4 py-2.5 rounded-xl bg-[#0c0d10] hover:bg-neutral-800 text-white border border-white/15 transition-colors flex items-center gap-2 cursor-pointer font-medium"
                 >
-                  <Download size={13} />
+                  <Download size={14} />
                   <span>Export TXT</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => handleExportReport('JSON')}
-                  className="px-3.5 py-2 bg-neutral-900 hover:bg-neutral-800 text-white border border-white/20 transition-colors flex items-center gap-1.5 cursor-pointer"
+                  className="px-4 py-2.5 rounded-xl bg-[#0c0d10] hover:bg-neutral-800 text-white border border-white/15 transition-colors flex items-center gap-2 cursor-pointer font-medium"
                 >
-                  <Download size={13} />
+                  <Download size={14} />
                   <span>Export JSON</span>
                 </button>
               </div>
             </div>
 
             {/* Flight Spec Details Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 font-mono text-xs">
-              <div className="flex flex-col gap-1 p-3 bg-neutral-950 border border-white/[0.06]">
-                <span className="text-[10px] text-neutral-500 uppercase">DEPARTURE</span>
-                <span className="text-white font-bold truncate">{currentLaunchSite.name}</span>
-                <span className="text-neutral-500 text-[10px] tabular-nums">{departureDate} {departureHourUtc.toString().padStart(2, '0')}:00 UTC</span>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 font-sans text-xs">
+              <div className="flex flex-col gap-1 p-4 bg-[#0c0d10] border border-white/[0.06] rounded-xl">
+                <span className="text-[10px] text-neutral-500 uppercase font-semibold">DEPARTURE</span>
+                <span className="text-white font-bold truncate text-sm">{currentLaunchSite.name}</span>
+                <span className="text-neutral-400 text-[11px] tabular-nums">{departureDate} {departureHourUtc.toString().padStart(2, '0')}:00 UTC</span>
               </div>
 
-              <div className="flex flex-col gap-1 p-3 bg-neutral-950 border border-white/[0.06]">
-                <span className="text-[10px] text-neutral-500 uppercase">TOUCHDOWN</span>
-                <span className="text-white font-bold truncate">{activeSiteEval.site.name}</span>
-                <span className="text-neutral-500 text-[10px] tabular-nums">{plannedArrivalEpochIso.substring(0, 16)} UTC</span>
+              <div className="flex flex-col gap-1 p-4 bg-[#0c0d10] border border-white/[0.06] rounded-xl">
+                <span className="text-[10px] text-neutral-500 uppercase font-semibold">TOUCHDOWN</span>
+                <span className="text-white font-bold truncate text-sm">{activeSiteEval.site.name}</span>
+                <span className="text-neutral-400 text-[11px] tabular-nums">{plannedArrivalEpochIso.substring(0, 16)} UTC</span>
               </div>
 
-              <div className="flex flex-col gap-1 p-3 bg-neutral-950 border border-white/[0.06]">
-                <span className="text-[10px] text-neutral-500 uppercase">TRANSIT TIME</span>
-                <span className="text-white font-bold">{effectiveTransferHours} Hours</span>
-                <span className="text-neutral-500 text-[10px]">{fmt(effectiveTransferHours / 24, 1)} Days Transit</span>
+              <div className="flex flex-col gap-1 p-4 bg-[#0c0d10] border border-white/[0.06] rounded-xl">
+                <span className="text-[10px] text-neutral-500 uppercase font-semibold">TRANSIT TIME</span>
+                <span className="text-white font-bold text-sm">{effectiveTransferHours} Hours</span>
+                <span className="text-neutral-400 text-[11px]">{fmt(effectiveTransferHours / 24, 1)} Days Transit</span>
               </div>
 
-              <div className="flex flex-col gap-1 p-3 bg-neutral-950 border border-white/[0.06]">
-                <span className="text-[10px] text-neutral-500 uppercase">STATUS VERDICT</span>
-                <span className="text-emerald-400 font-bold">{activeSiteEval.verdict}</span>
-                <span className="text-neutral-500 text-[10px]">Score: {activeSiteEval.feasibilityScore}/100</span>
+              <div className="flex flex-col gap-1 p-4 bg-[#0c0d10] border border-white/[0.06] rounded-xl">
+                <span className="text-[10px] text-neutral-500 uppercase font-semibold">STATUS VERDICT</span>
+                <span className="text-emerald-400 font-bold text-sm">{activeSiteEval.verdict}</span>
+                <span className="text-neutral-400 text-[11px]">Score: {activeSiteEval.feasibilityScore}/100</span>
               </div>
             </div>
 
             {/* Seamless Handoff to Mission Browser */}
             <div className="pt-4 border-t border-white/[0.08] flex flex-col sm:flex-row items-center justify-between gap-4">
-              <div className="flex flex-col gap-0.5">
-                <span className="font-mono text-xs font-bold uppercase text-white">
+              <div className="flex flex-col gap-1">
+                <span className="font-sans text-sm font-bold text-white">
                   Inspect Local Lunar Relief &amp; Topographic Horizon
                 </span>
-                <span className="text-xs text-neutral-400">
+                <span className="text-xs text-neutral-400 font-sans">
                   Pre-loads your planned landing epoch into the high-resolution LOLA 80m DEM ray-marching engine.
                 </span>
               </div>
@@ -1512,10 +1529,10 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
                 onClick={() => {
                   navigate(`/mission-browser?site=${activeSiteEval.site.id}&epoch=${plannedArrivalEpochIso}&fromRoute=1`);
                 }}
-                className="w-full sm:w-auto px-6 py-3 bg-white hover:bg-neutral-200 text-black font-mono font-extrabold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg shrink-0"
+                className="w-full sm:w-auto px-7 py-3.5 bg-white hover:bg-neutral-200 text-black font-sans font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg rounded-xl shrink-0"
               >
                 <span>OPEN IN SURFACE BROWSER</span>
-                <ArrowRight size={14} />
+                <ArrowRight size={15} />
               </button>
             </div>
 
