@@ -38,8 +38,11 @@ export function createApp(): Express {
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-  // Serve static files for frontend test lab if available
+  // Serve static files for frontend if available
   const staticCandidates = [
+    path.resolve(process.cwd(), 'frontend/dist'),
+    path.resolve(process.cwd(), '../frontend/dist'),
+    path.resolve(__dirname, '../../frontend/dist'),
     path.resolve(process.cwd(), 'frontend/public'),
     path.resolve(process.cwd(), '../frontend/public'),
     path.resolve(__dirname, '../../frontend/public'),
@@ -47,7 +50,6 @@ export function createApp(): Express {
   for (const cand of staticCandidates) {
     if (fs.existsSync(cand)) {
       app.use(express.static(cand));
-      break;
     }
   }
 
@@ -66,6 +68,24 @@ export function createApp(): Express {
   // Dedicated Test Lab Endpoints (available at both /api/test and /api/v1/test)
   app.use('/api/test', testRoutes);
   app.use(`${prefix}/test`, testRoutes);
+
+  // SPA Catch-All fallback for client-side routing (serves index.html for non-API GET requests)
+  app.use((req, res, next) => {
+    if (req.method !== 'GET' || req.path.startsWith('/api') || req.path.startsWith(prefix)) {
+      return next();
+    }
+    const indexCandidates = [
+      path.resolve(process.cwd(), 'frontend/dist/index.html'),
+      path.resolve(process.cwd(), '../frontend/dist/index.html'),
+      path.resolve(__dirname, '../../frontend/dist/index.html'),
+    ];
+    for (const indexFile of indexCandidates) {
+      if (fs.existsSync(indexFile)) {
+        return res.sendFile(indexFile);
+      }
+    }
+    next();
+  });
 
   // Catch-all 404 and centralized error handler
   app.use(notFoundHandler);

@@ -20,10 +20,9 @@ import {
   Sliders, 
   ShieldCheck,
   Columns,
-  X,
-  Rocket
+  X
 } from 'lucide-react';
-import { Link, useRouter } from '../router';
+import { useRouter } from '../router';
 import { 
   lunarApi, 
   type SiteAnalysisData, 
@@ -1440,56 +1439,6 @@ export const MissionBrowserPage: React.FC = () => {
           <p className="font-body-lg text-sm sm:text-base lg:text-lg text-[#E6E9F0]/80 max-w-4xl leading-relaxed font-light">
             Evaluate topocentric solar illumination, direct-to-Earth communication elevation, and digital elevation model (DEM) terrain slope to identify optimal landing opportunities across candidate Artemis and CLPS landing zones.
           </p>
-
-          {/* Hairline Technical Specs Bar */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 font-mono text-xs">
-            <div className="p-3 bg-white/[0.02] border border-white/10 flex flex-col gap-0.5">
-              <span className="text-white/40 text-[9.5px] uppercase tracking-wider">TARGET DOMAIN</span>
-              <span className="font-bold text-white text-xs sm:text-sm">South Pole (85°S - 90°S)</span>
-            </div>
-            <div className="p-3 bg-white/[0.02] border border-white/10 flex flex-col gap-0.5">
-              <span className="text-white/40 text-[9.5px] uppercase tracking-wider">CELESTIAL EPHEMERIS</span>
-              <span className="font-bold text-[#ECC068] text-xs sm:text-sm">NASA JPL DE440 / MOON_ME</span>
-            </div>
-            <div className="p-3 bg-white/[0.02] border border-white/10 flex flex-col gap-0.5">
-              <span className="text-white/40 text-[9.5px] uppercase tracking-wider">SURFACE ALTIMETRY</span>
-              <span className="font-bold text-[#58D8D0] text-xs sm:text-sm">NASA LOLA 4K TOPOGRAPHY</span>
-            </div>
-            <div className="p-3 bg-white/[0.02] border border-white/10 flex flex-col gap-0.5">
-              <span className="text-white/40 text-[9.5px] uppercase tracking-wider">SOLAR INCIDENCE</span>
-              <span className="font-bold text-white text-xs sm:text-sm">+0.5° TO +1.8° GRAZING</span>
-            </div>
-          </div>
-
-          {/* Mission Route & Trajectory Planner Direct Quick-Link */}
-          <div className="mt-2 p-3 sm:p-4 bg-[#0B0F14] border border-white/15 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-none border border-emerald-500/40 bg-emerald-500/10 flex items-center justify-center shrink-0">
-                <Rocket size={16} className="text-emerald-400" />
-              </div>
-              <div className="flex flex-col">
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-xs uppercase tracking-[0.2em] font-bold text-white">
-                    MISSION ROUTE & LAUNCH WINDOW PLANNER
-                  </span>
-                  <span className="px-1.5 py-0.5 text-[9px] font-mono uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
-                    NEW CAPABILITY
-                  </span>
-                </div>
-                <span className="font-mono text-[11px] text-white/50">
-                  Model Earth spaceport departure, trans-lunar injection, and compute arrival solar/Earth telemetry.
-                </span>
-              </div>
-            </div>
-
-            <Link
-              href="/route-planner"
-              className="px-4 py-2 border border-emerald-400/60 bg-emerald-500/10 hover:bg-emerald-400 hover:text-black text-emerald-300 font-mono text-xs uppercase tracking-widest font-bold transition-all flex items-center justify-center gap-2 cursor-pointer self-start sm:self-auto"
-            >
-              <span>CONFIGURE ROUTE</span>
-              <span>→</span>
-            </Link>
-          </div>
 
           {/* Arrival Epoch Handoff Banner if navigated from Route Planner */}
           {fromRouteNotice && (
