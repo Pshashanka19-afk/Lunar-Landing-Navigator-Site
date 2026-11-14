@@ -60,32 +60,88 @@
       "name": "Shackleton Crater - Connecting Ridge",
       "latitudeDeg": -89.78,
       "longitudeDeg": 125.4,
-      "elevationMeters": 1413.9,
-      "projectedCoordinates": { "x": 5437.8, "y": 3864.5 }
+      "elevationMeters": 1413.88,
+      "projectedCoordinates": {
+        "x": 5437.8,
+        "y": 3864.5
+      }
+    },
+    {
+      "id": "malapert-massif",
+      "name": "Malapert Massif",
+      "latitudeDeg": -85.9948,
+      "longitudeDeg": -0.23578,
+      "elevationMeters": -2715.29,
+      "projectedCoordinates": {
+        "x": -500.0,
+        "y": -121499.5
+      }
     },
     {
       "id": "de-gerlache-rim",
       "name": "de Gerlache Crater Rim",
       "latitudeDeg": -88.71,
       "longitudeDeg": -88.35,
-      "elevationMeters": -1148.2,
-      "projectedCoordinates": { "x": -39102.6, "y": -1126.4 }
+      "elevationMeters": -1148.17,
+      "projectedCoordinates": {
+        "x": -39102.6,
+        "y": -1126.4
+      }
     },
     {
       "id": "haworth-crater-rim",
-      "name": "Haworth Crater Rim Plateau",
-      "latitudeDeg": -87.45,
-      "longitudeDeg": -5.10,
-      "elevationMeters": -1828.2,
-      "projectedCoordinates": { "x": -6874.8, "y": -77031.1 }
+      "name": "Haworth (representative candidate-region point)",
+      "latitudeDeg": -86.7639,
+      "longitudeDeg": -22.777,
+      "elevationMeters": -199.77,
+      "projectedCoordinates": {
+        "x": -38000.5,
+        "y": -90501.2
+      }
     },
     {
-      "id": "malapert-mountain",
-      "name": "Malapert Mountain",
-      "latitudeDeg": -85.99,
-      "longitudeDeg": 2.91,
-      "elevationMeters": -2854.7,
-      "projectedCoordinates": { "x": 6175.6, "y": -121489.4 }
+      "id": "peak-near-shackleton",
+      "name": "Peak Near Shackleton",
+      "latitudeDeg": -88.811,
+      "longitudeDeg": 123.6901,
+      "elevationMeters": -1564.59,
+      "projectedCoordinates": {
+        "x": 30000.2,
+        "y": 20000.2
+      }
     }
-  ]
+  ],
+  "demonstrationSitesOutsideCoverage": [
+    {
+      "id": "statio-shiv-shakti",
+      "name": "Statio Shiv Shakti",
+      "latitudeDeg": -69.3734,
+      "longitudeDeg": 32.3198,
+      "projectedCoordinates": {
+        "x": 338061.8,
+        "y": -534351.9
+      }
+    },
+    {
+      "id": "mons-mouton",
+      "name": "Mons Mouton (MMO01)",
+      "latitudeDeg": -85.416,
+      "longitudeDeg": 31.851,
+      "projectedCoordinates": {
+        "x": 73392.3,
+        "y": -118134.8
+      }
+    },
+    {
+      "id": "nobile-rim-1",
+      "name": "Nobile Rim 1 (NR101)",
+      "latitudeDeg": -85.295,
+      "longitudeDeg": 36.917,
+      "projectedCoordinates": {
+        "x": 85744.8,
+        "y": -114130.8
+      }
+    }
+  ],
+  "coverageNote": "Projected bounds are authoritative for point coverage. The geographic longitude range is a conservative wrap-safe envelope and must not be interpreted as full 360-degree raster coverage. Elevations are bilinear samples from the bundled 80 m raster and are not touchdown safety assessments."
 }

@@ -3,7 +3,7 @@ export interface DemonstrationLandingSite {
   name: string;
   latitudeDeg: number;
   longitudeDeg: number;
-  elevationMeters: number;
+  elevationMeters?: number;
   targetRegion: string;
   description: string;
   scientificInterest: string[];
@@ -48,45 +48,82 @@ export const SCIENTIFIC_CONSTANTS = {
   FRAME_INERTIAL_J2000: 'J2000',
 } as const;
 
+// Candidate-region representative coordinates are taken from published Artemis
+// landing-site tables (Wuellner et al., 2025; NASA/USGS references). Statio Shiv
+// Shakti uses the IAU/USGS Gazetteer centre coordinate. Coordinates identify
+// representative points, not guaranteed touchdown ellipses or safe landing zones.
+// DEM-derived terrain metrics are available only where the bundled raster has data.
 export const DEFAULT_DEMO_SITES: DemonstrationLandingSite[] = [
   {
     id: 'shackleton-connecting-ridge',
-    name: 'Shackleton Crater Ridge',
+    name: 'Shackleton Crater - Connecting Ridge',
     latitudeDeg: -89.78,
-    longitudeDeg: 125.40,
-    elevationMeters: 1413.9,
-    targetRegion: 'South Pole Ridge',
-    description: 'Prominent elevated ridge near Shackleton with 72h continuous sunlight and 2.94° slope.',
-    scientificInterest: ['Continuous solar illumination persistence', 'Direct volatile access', 'Low-slope landing safety'],
+    longitudeDeg: 125.4,
+    targetRegion: 'South Pole',
+    description: 'Prominent elevated ridge connecting Shackleton and de Gerlache craters with high cumulative sunlight.',
+    scientificInterest: ['Solar illumination persistence', 'Direct-to-Earth line of sight', 'Proximity to PSR volatile traps'],
   },
   {
-    id: 'malapert-mountain',
+    id: 'malapert-massif',
     name: 'Malapert Massif',
-    latitudeDeg: -86.04,
-    longitudeDeg: 2.70,
-    elevationMeters: -2854.7,
+    latitudeDeg: -85.9948,
+    longitudeDeg: -0.23578,
     targetRegion: 'Malapert Massif',
-    description: 'Elevated highland massif offering extended Earth visibility (11.5h) and high maximum solar elevation (18.6°).',
-    scientificInterest: ['Longest direct Earth communication visibility', 'High solar elevation peak', 'Highland geology'],
+    description: 'Representative point for the Malapert Massif south-polar candidate landing region.',
+    scientificInterest: ['Highland geology', 'Earth visibility', 'Solar illumination'],
   },
   {
-    id: 'de-gerlache-rim-2',
-    name: 'de Gerlache Rim',
+    id: 'de-gerlache-rim',
+    name: 'de Gerlache Crater Rim',
     latitudeDeg: -88.71,
-    longitudeDeg: -68.70,
-    elevationMeters: -1148.4,
-    targetRegion: 'South Pole / de Gerlache',
-    description: 'Crater rim section providing periodic illumination and direct Earth visibility opportunities.',
-    scientificInterest: ['Permanently shadowed region access', 'Volatiles prospecting', '6.19° rolling terrain'],
+    longitudeDeg: -88.35,
+    targetRegion: 'South Pole',
+    description: 'Narrow rim section providing periodic sunlight and Earth communication opportunities over polar summer.',
+    scientificInterest: ['Permanently shadowed region access', 'Volatiles prospecting', 'CLPS lander operations'],
   },
   {
     id: 'haworth-crater-rim',
-    name: 'Haworth Crater Rim',
-    latitudeDeg: -87.87,
-    longitudeDeg: -5.17,
-    elevationMeters: -1200.0,
+    name: 'Haworth (Artemis candidate region)',
+    latitudeDeg: -86.7639,
+    longitudeDeg: -22.777,
     targetRegion: 'Haworth',
-    description: 'High-latitude plateau bordering deep cryogenic volatile cold traps in Haworth crater.',
-    scientificInterest: ['Cryogenic trap exploration', 'Surface trafficability', 'Direct line of sight to Earth'],
+    description: 'Representative coordinate for the Haworth Artemis candidate landing region.',
+    scientificInterest: ['Permanently shadowed region access', 'Volatile prospecting', 'Terrain characterization'],
+  },
+  {
+    id: 'statio-shiv-shakti',
+    name: 'Statio Shiv Shakti',
+    latitudeDeg: -69.3734,
+    longitudeDeg: 32.3198,
+    targetRegion: 'Chandrayaan-3 landing site',
+    description: 'IAU-named landing site of Chandrayaan-3 Vikram, included as an Indian lunar landing-site reference. It lies outside the bundled south-polar DEM coverage, so DEM-based terrain results are unavailable for this location.',
+    scientificInterest: ['Chandrayaan-3 landing-site reference', 'Lunar surface operations', 'Cross-mission site comparison'],
+  },
+  {
+    id: 'mons-mouton',
+    name: 'Mons Mouton (MMO01)',
+    latitudeDeg: -85.416,
+    longitudeDeg: 31.851,
+    targetRegion: 'Mons Mouton',
+    description: 'Representative candidate landing point on Mons Mouton, within the lunar south-polar Artemis candidate region.',
+    scientificInterest: ['South-polar landing-site assessment', 'Illumination analysis', 'Terrain and slope characterization'],
+  },
+  {
+    id: 'peak-near-shackleton',
+    name: 'Peak Near Shackleton',
+    latitudeDeg: -88.811,
+    longitudeDeg: 123.6901,
+    targetRegion: 'Peak Near Shackleton',
+    description: 'NASA Artemis candidate landing region near Shackleton crater.',
+    scientificInterest: ['South-polar illumination', 'Shackleton crater access', 'Earth communication geometry'],
+  },
+  {
+    id: 'nobile-rim-1',
+    name: 'Nobile Rim 1',
+    latitudeDeg: -85.295,
+    longitudeDeg: 36.917,
+    targetRegion: 'Nobile Rim 1',
+    description: 'Representative candidate landing point on the Nobile Rim 1 region.',
+    scientificInterest: ['Rim terrain characterization', 'Nearby permanently shadowed terrain', 'Solar illumination'],
   },
 ];

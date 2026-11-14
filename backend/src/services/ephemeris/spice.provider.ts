@@ -282,6 +282,11 @@ export class SpiceProvider implements IEphemerisProvider {
     if (this.spiceInstance.failed()) {
       const errMsg = this.spiceInstance.getmsg('LONG');
       this.spiceInstance.reset();
+      if (errMsg.includes('Insufficient ephemeris data') || errMsg.includes('SPKINSUFFDATA')) {
+        throw new ScientificResourceUnavailableError(
+          'Requested date is outside NASA SPICE kernel ephemeris coverage (1900-01-01 to 2050-01-01). Please choose a mission epoch within this supported interval.'
+        );
+      }
       throw new ScientificResourceUnavailableError(`SPICE calculation failed for MOON: ${errMsg}`);
     }
 
@@ -303,6 +308,11 @@ export class SpiceProvider implements IEphemerisProvider {
     if (this.spiceInstance.failed()) {
       const errMsg = this.spiceInstance.getmsg('LONG');
       this.spiceInstance.reset();
+      if (errMsg.includes('Insufficient ephemeris data') || errMsg.includes('SPKINSUFFDATA')) {
+        throw new ScientificResourceUnavailableError(
+          'Requested date is outside NASA SPICE kernel ephemeris coverage (1900-01-01 to 2050-01-01). Please choose a mission epoch within this supported interval.'
+        );
+      }
       throw new ScientificResourceUnavailableError(`SPICE calculation failed for ${target}: ${errMsg}`);
     }
 

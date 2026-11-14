@@ -50,6 +50,15 @@
   box-shadow: 0 0 25px -4px rgba(255, 255, 255, 0.35);
 }
 
+/* Transparent Cesium overlay */
+.cesium-viewer-transparent,
+.cesium-viewer-transparent .cesium-viewer,
+.cesium-viewer-transparent .cesium-widget,
+.cesium-viewer-transparent .cesium-widget canvas {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
 .glow-secondary {
   box-shadow: 0 0 25px -4px rgba(236, 192, 104, 0.35);
 }

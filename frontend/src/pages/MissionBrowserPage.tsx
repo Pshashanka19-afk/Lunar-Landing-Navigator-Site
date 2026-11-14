@@ -238,6 +238,20 @@ export const MissionBrowserPage: React.FC = () => {
     const site = candidateSites.find((s) => s.id === selectedSiteId);
     if (!site) return;
 
+    // Validate epochDate coverage (NASA SPICE kernels cover 1900-2050)
+    if (!epochDate || !/^\d{4}-\d{2}-\d{2}$/.test(epochDate)) {
+      setAnalysisError('Please enter a valid mission date in YYYY-MM-DD format.');
+      setIsAnalyzing(false);
+      return;
+    }
+
+    const year = parseInt(epochDate.split('-')[0], 10);
+    if (year < 1900 || year > 2050) {
+      setAnalysisError(`Selected date (${epochDate}) is outside NASA SPICE ephemeris coverage (1900-01-01 to 2050-01-01).`);
+      setIsAnalyzing(false);
+      return;
+    }
+
     setIsAnalyzing(true);
     setAnalysisError(null);
 
@@ -275,8 +289,8 @@ export const MissionBrowserPage: React.FC = () => {
       const dd = String(d.getUTCDate()).padStart(2, '0');
       const dateStr = `${yyyy}-${mm}-${dd}`;
       const hourVal = d.getUTCHours();
-      setEpochDate(dateStr);
-      setEpochHour(hourVal);
+      setEpochDate((prev) => (prev === dateStr ? prev : dateStr));
+      setEpochHour((prev) => (prev === hourVal ? prev : hourVal));
     } catch {
       // Ignore parsing errors
     }
@@ -676,13 +690,21 @@ export const MissionBrowserPage: React.FC = () => {
         <div className="flex flex-col gap-2.5">
           {/* Date Selector */}
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] uppercase font-mono font-bold text-white/50 flex items-center gap-1">
-              <Calendar size={11} className="text-white/60" />
-              <span>Observation Date</span>
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="text-[10px] uppercase font-mono font-bold text-white/50 flex items-center gap-1">
+                <Calendar size={11} className="text-white/60" />
+                <span>Observation Date</span>
+              </label>
+              <span className="text-[9px] font-mono text-[#58D8D0] flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#58D8D0]" />
+                <span>3D SIM SYNCED</span>
+              </span>
+            </div>
             <MissionDatePicker
               value={epochDate}
               onChange={(newDate) => setEpochDate(newDate)}
+              min="1900-01-01"
+              max="2050-01-01"
             />
           </div>
 
@@ -708,13 +730,45 @@ export const MissionBrowserPage: React.FC = () => {
             </div>
           </div>
 
+          {/* Active Synced Simulation Banner */}
+          <div className="flex items-center justify-between px-2.5 py-1.5 bg-[#0B0F14] border border-[#58D8D0]/30 text-[9.5px] font-mono">
+            <span className="text-white/60 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#58D8D0] animate-pulse" />
+              <span>3D SIM TIME:</span>
+            </span>
+            <span className="text-[#58D8D0] font-bold tabular-nums">
+              {epochDate} {String(epochHour).padStart(2, '0')}:00 UTC
+            </span>
+          </div>
+
+          {/* Loading Indicator when calculating */}
+          {isAnalyzing && (
+            <div className="flex items-center gap-2 px-2.5 py-1.5 bg-[#58D8D0]/10 border border-[#58D8D0]/40 text-[9.5px] font-mono text-[#58D8D0] animate-in fade-in">
+              <RefreshCw size={11} className="animate-spin shrink-0" />
+              <span>Calculating SPICE DE440 ephemeris for {epochDate}...</span>
+            </div>
+          )}
+
+          {/* Warning / Error Indicator */}
+          {analysisError && (
+            <div className="flex items-start gap-1.5 px-2.5 py-1.5 bg-red-950/70 border border-red-500/50 text-[9.5px] font-mono text-red-300 animate-in fade-in">
+              <AlertTriangle size={12} className="text-red-400 shrink-0 mt-0.5" />
+              <div className="flex flex-col gap-0.5">
+                <span className="font-bold text-red-200">Ephemeris Warning:</span>
+                <span>{analysisError}</span>
+              </div>
+            </div>
+          )}
+
           {/* Mission Presets */}
           <div className="pt-1.5 flex flex-wrap gap-1.5 items-center">
             <span className="text-[9px] font-mono uppercase text-white/40 mr-0.5">Presets:</span>
             {[
+              { label: 'Future (Mar 2027)', date: '2027-03-15', hour: 12 },
               { label: 'Artemis III (Oct 2026)', date: '2026-10-14', hour: 12 },
               { label: 'Summer Peak (Dec 2026)', date: '2026-12-21', hour: 12 },
-              { label: 'Current Ephemeris', date: '2026-10-29', hour: 12 },
+              { label: 'Apollo 11 (Jul 1969)', date: '1969-07-20', hour: 20 },
+              { label: 'Today', date: new Date().toISOString().split('T')[0], hour: 12 },
             ].map((preset) => (
               <button
                 key={preset.label}
@@ -723,7 +777,11 @@ export const MissionBrowserPage: React.FC = () => {
                   setEpochDate(preset.date);
                   setEpochHour(preset.hour);
                 }}
-                className="px-2 py-0.5 text-[9.5px] font-mono uppercase tracking-wider bg-black/60 hover:bg-white/15 border border-white/15 text-white/70 hover:text-white transition-colors cursor-pointer rounded-none"
+                className={`px-2 py-0.5 text-[9.5px] font-mono uppercase tracking-wider border transition-colors cursor-pointer rounded-none ${
+                  epochDate === preset.date
+                    ? 'bg-[#58D8D0]/20 border-[#58D8D0] text-[#58D8D0] font-bold'
+                    : 'bg-black/60 hover:bg-white/15 border-white/15 text-white/70 hover:text-white'
+                }`}
               >
                 {preset.label}
               </button>
@@ -1339,6 +1397,25 @@ export const MissionBrowserPage: React.FC = () => {
                   : 'scale-[0.998]'
               }`}
             >
+              {/* Unified 3D System Header Bar */}
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-2 pb-1.5 border-b border-white/10 px-1">
+                <div className="flex flex-wrap items-center gap-1.5 font-mono text-xs font-bold uppercase tracking-wider">
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-[#070A0F] border border-[#58D8D0]/40 text-[#58D8D0] shadow-[0_0_15px_rgba(88,216,208,0.2)]">
+                    <Sun className="w-3.5 h-3.5 text-amber-400" />
+                    <span>UNIFIED HELIOCENTRIC SYSTEM (SUN → EARTH → MOON)</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-500/15 border border-emerald-500/40 text-emerald-300">
+                    <Globe className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>NASA MOON TREK WMTS INTEGRATED</span>
+                  </div>
+                </div>
+
+                <div className="hidden sm:flex items-center gap-2 text-[10px] font-mono text-slate-400">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>SYNCHRONIZED WITH CANDIDATE SITE DATE: {epochDate}</span>
+                </div>
+              </div>
+
               <LunarInteractiveMap
                 sites={candidateSites}
                 selectedSiteId={selectedSiteId}
@@ -1349,6 +1426,8 @@ export const MissionBrowserPage: React.FC = () => {
                 epochDate={epochDate}
                 epochHour={epochHour}
                 onSimulationEpochChange={handleSimulationEpochChange}
+                isAnalyzing={isAnalyzing}
+                analysisError={analysisError}
               />
             </div>
 

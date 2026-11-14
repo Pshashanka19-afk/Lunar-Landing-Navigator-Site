@@ -16,6 +16,7 @@ import illuminationRoutes from './routes/illumination.routes';
 import windowsRoutes from './routes/windows.routes';
 import seriesRoutes from './routes/series.routes';
 import testRoutes from './routes/test.routes';
+import trekRoutes from './routes/trek.routes';
 
 export function createApp(): Express {
   const app = express();
@@ -59,6 +60,8 @@ export function createApp(): Express {
   app.use(`${prefix}/illumination`, illuminationRoutes);
   app.use(`${prefix}/windows`, windowsRoutes);
   app.use(`${prefix}/series`, seriesRoutes);
+  app.use(`${prefix}/trek`, trekRoutes);
+  app.use('/api/trek', trekRoutes);
 
   // Dedicated Test Lab Endpoints (available at both /api/test and /api/v1/test)
   app.use('/api/test', testRoutes);

@@ -2,6 +2,8 @@ import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react'
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import gsap from 'gsap';
+import * as Cesium from 'cesium';
+import 'cesium/Build/Cesium/Widgets/widgets.css';
 import { 
   Globe, 
   RotateCcw, 
@@ -18,9 +20,11 @@ import {
   ZoomOut,
   Crosshair,
   Compass,
-  Layers
+  Layers,
+  RefreshCw,
+  AlertTriangle
 } from 'lucide-react';
-import { lunarApi, type SiteAnalysisData } from '../services/lunarApi';
+import { lunarApi, type SiteAnalysisData, type MoonTrekLayerMetadata } from '../services/lunarApi';
 
 export interface MapSiteItem {
   id: string;
@@ -35,7 +39,12 @@ export interface MapSiteItem {
 
 // Retained type exports for backward compatibility across other components
 export type CelestialViewMode = 'SOLAR_SYSTEM' | 'EARTH_MOON' | 'LUNAR_MISSION';
-export type DatasetLayerType = 'LROC_IMAGERY' | 'ELEVATION';
+export type DatasetLayerType = 
+  | 'MOON_TREK_WAC' 
+  | 'MOON_TREK_LOLA' 
+  | 'MOON_TREK_RELIEF' 
+  | 'LROC_IMAGERY' 
+  | 'ELEVATION';
 export type ObservationMode = 'OBSERVER_SURFACE' | 'OBSERVER_SPACE';
 export type VisualizationScaleMode = 'EXPLORATION' | 'SCIENTIFIC_GEOMETRY';
 export type SurfaceVantageType = 'APPROACH' | 'MASTCAM' | 'EVA' | 'TACTICAL';
@@ -54,6 +63,9 @@ interface LunarInteractiveMapProps {
   epochHour?: number;
   onSimulationEpochChange?: (isoUtc: string) => void;
   initialCelestialMode?: CelestialViewMode;
+  isAnalyzing?: boolean;
+  analysisError?: string | null;
+  onSwitchToMoonTrek?: () => void;
 }
 
 // -----------------------------------------------------------------------------
@@ -296,6 +308,9 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
   epochDate = '2026-10-14',
   epochHour = 12,
   onSimulationEpochChange,
+  isAnalyzing = false,
+  analysisError = null,
+  onSwitchToMoonTrek: _onSwitchToMoonTrek,
 }) => {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const canvasMountRef = useRef<HTMLDivElement | null>(null);
@@ -329,6 +344,11 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
   const moonGraticuleGroupRef = useRef<THREE.Group | null>(null);
   const moonSitesGroupRef = useRef<THREE.Group | null>(null);
 
+  // CesiumJS NASA Moon Trek Hybrid Layer References
+  const cesiumMountRef = useRef<HTMLDivElement | null>(null);
+  const cesiumViewerRef = useRef<Cesium.Viewer | null>(null);
+  const cesiumTrekLayersRef = useRef<MoonTrekLayerMetadata[]>([]);
+
   // Celestial Billboard Labels
   const celestialLabelsGroupRef = useRef<THREE.Group | null>(null);
   const sunLabelRef = useRef<THREE.Sprite | null>(null);
@@ -348,7 +368,11 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
   }, [cameraFocusTarget]);
 
   // Dataset Layer & Visual Element Toggles
-  const [activeLayer, setActiveLayer] = useState<DatasetLayerType>('LROC_IMAGERY');
+  const [activeLayer, setActiveLayer] = useState<DatasetLayerType>('MOON_TREK_WAC');
+  const activeLayerRef = useRef<DatasetLayerType>('MOON_TREK_WAC');
+  useEffect(() => {
+    activeLayerRef.current = activeLayer;
+  }, [activeLayer]);
   const [showOrbits, setShowOrbits] = useState<boolean>(true);
   const [showAxialTilts, setShowAxialTilts] = useState<boolean>(true);
   const [showLabels, setShowLabels] = useState<boolean>(true);
@@ -394,8 +418,19 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
   }, [epochDate, epochHour]);
 
   const [simTimeMs, setSimTimeMs] = useState<number>(initialTimeMs);
-  const [isLive, setIsLive] = useState<boolean>(true);
+  const simTimeRef = useRef<number>(initialTimeMs);
+  const [isLive, setIsLive] = useState<boolean>(false);
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
+
+  // Synchronize 3D simulation clock whenever Candidate Site date/hour changes
+  useEffect(() => {
+    const targetMs = new Date(`${epochDate}T${epochHour.toString().padStart(2, '0')}:00:00Z`).getTime();
+    if (!isNaN(targetMs)) {
+      setSimTimeMs(targetMs);
+      simTimeRef.current = targetMs;
+      setIsLive(false); // Candidate Site date selection drives simulation
+    }
+  }, [epochDate, epochHour]);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
   const [customSpeed, setCustomSpeed] = useState<number>(3600);
   const [showCustomSpeed, setShowCustomSpeed] = useState<boolean>(false);
@@ -493,6 +528,7 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
     earthNight: THREE.Texture | null;
     earthClouds: THREE.Texture | null;
     sunCorona: THREE.Texture | null;
+    sunPhotosphere: THREE.Texture | null;
   }>({
     lrocColor: null,
     elevation: null,
@@ -501,6 +537,7 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
     earthNight: null,
     earthClouds: null,
     sunCorona: null,
+    sunPhotosphere: null,
   });
 
   // Fullscreen Management
@@ -549,6 +586,154 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
       setTimeout(() => setIsExactSample(false), 3000);
     }
   }, [siteAnalysis, initialTimeMs]);
+
+  // ---------------------------------------------------------------------------
+  // Initialize CesiumJS NASA Moon Trek Lunar Globe (Transparent Overlay Layer)
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    const cesiumMount = cesiumMountRef.current;
+    if (!cesiumMount) return;
+
+    // Define Selenographic Ellipsoid (Moon Sphere with mean radius 1,737,400 m)
+    const lunarEllipsoid = new Cesium.Ellipsoid(
+      LUNAR_MEAN_RADIUS_METERS,
+      LUNAR_MEAN_RADIUS_METERS,
+      LUNAR_MEAN_RADIUS_METERS
+    );
+
+    (window as any).CESIUM_BASE_URL = '/cesium';
+
+    const lunarTilingScheme = new Cesium.GeographicTilingScheme({
+      ellipsoid: lunarEllipsoid,
+      numberOfLevelZeroTilesX: 2,
+      numberOfLevelZeroTilesY: 1,
+    });
+
+    // Base NASA Moon Trek LROC WAC 100m Global Mosaic WMTS Provider
+    const lrocProvider = new Cesium.UrlTemplateImageryProvider({
+      url: 'https://trek.nasa.gov/tiles/Moon/EQ/LRO_WAC_Mosaic_Global_303ppd_v02/1.0.0/default/default028mm/{z}/{y}/{x}.jpg',
+      tilingScheme: lunarTilingScheme,
+      ellipsoid: lunarEllipsoid,
+      minimumLevel: 0,
+      maximumLevel: 8,
+      credit: new Cesium.Credit('NASA / GSFC / ASU (LROC) - NASA Moon Trek WMTS', true),
+    });
+
+    const viewer = new Cesium.Viewer(cesiumMount, {
+      globe: new Cesium.Globe(lunarEllipsoid),
+      baseLayer: new Cesium.ImageryLayer(lrocProvider),
+      baseLayerPicker: false,
+      geocoder: false,
+      homeButton: false,
+      infoBox: false,
+      sceneModePicker: false,
+      selectionIndicator: false,
+      timeline: false,
+      animation: false,
+      navigationHelpButton: false,
+      fullscreenButton: false,
+      vrButton: false,
+      skyBox: false as any,
+      skyAtmosphere: false as any,
+      contextOptions: {
+        webgl: {
+          alpha: true,
+        },
+      },
+    });
+
+    cesiumViewerRef.current = viewer;
+
+    // Transparent background allowing Three.js Sun & Earth to be visible
+    viewer.scene.backgroundColor = Cesium.Color.TRANSPARENT;
+    viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString('#14171a');
+    viewer.scene.globe.enableLighting = true;
+    viewer.scene.globe.showGroundAtmosphere = false;
+    viewer.scene.highDynamicRange = true;
+
+    // Synchronize simulation time with Candidate Site Date & Hour
+    const simIso = `${epochDate}T${epochHour.toString().padStart(2, '0')}:00:00Z`;
+    try {
+      const julianDate = Cesium.JulianDate.fromIso8601(simIso);
+      viewer.clock.currentTime = julianDate;
+      viewer.clock.shouldAnimate = false;
+    } catch {
+      // ignore
+    }
+
+    // Add candidate landing site beacons on Cesium globe
+    sites.forEach((site) => {
+      const isSelected = site.id === selectedSiteId;
+      const pinColor = isSelected
+        ? Cesium.Color.fromCssColorString('#00FF9D')
+        : site.id.includes('shackleton')
+        ? Cesium.Color.fromCssColorString('#58D8D0')
+        : site.id.includes('malapert')
+        ? Cesium.Color.fromCssColorString('#ECC068')
+        : site.id.includes('gerlache')
+        ? Cesium.Color.fromCssColorString('#78F5EC')
+        : Cesium.Color.fromCssColorString('#FFB3B0');
+
+      const position = Cesium.Cartesian3.fromDegrees(
+        site.longitudeDeg,
+        site.latitudeDeg,
+        site.elevationMeters || 0,
+        lunarEllipsoid
+      );
+
+      viewer.entities.add({
+        id: site.id,
+        name: site.name,
+        position: position,
+        point: {
+          pixelSize: isSelected ? 12 : 8,
+          color: pinColor,
+          outlineColor: Cesium.Color.WHITE,
+          outlineWidth: 2,
+          disableDepthTestDistance: 500000.0,
+        },
+        label: {
+          text: ` ${formatSiteShortName(site.name)} `,
+          font: '11px "Space Mono", monospace',
+          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+          fillColor: isSelected ? Cesium.Color.fromCssColorString('#00FF9D') : Cesium.Color.WHITE,
+          outlineColor: Cesium.Color.BLACK,
+          outlineWidth: 2,
+          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+          pixelOffset: new Cesium.Cartesian2(0, -12),
+          disableDepthTestDistance: 500000.0,
+        },
+      });
+    });
+
+    // Load available layer catalog from backend
+    lunarApi.getMoonTrekLayers().then((loaded) => {
+      if (loaded && loaded.length > 0) {
+        cesiumTrekLayersRef.current = loaded;
+      }
+    });
+
+    return () => {
+      if (!viewer.isDestroyed()) {
+        viewer.destroy();
+      }
+      cesiumViewerRef.current = null;
+    };
+  }, [sites, selectedSiteId]);
+
+  // Synchronize Cesium sunlight orientation with Candidate Site Date & Hour
+  useEffect(() => {
+    const viewer = cesiumViewerRef.current;
+    if (!viewer || viewer.isDestroyed()) return;
+
+    const simIso = `${epochDate}T${epochHour.toString().padStart(2, '0')}:00:00Z`;
+    try {
+      const julianDate = Cesium.JulianDate.fromIso8601(simIso);
+      viewer.clock.currentTime = julianDate;
+    } catch {
+      // ignore
+    }
+  }, [epochDate, epochHour]);
 
   // ---------------------------------------------------------------------------
   // Initialize Three.js Unified Sun-Centric 3D Celestial Scene
@@ -624,10 +809,13 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
     earthNight.colorSpace = THREE.SRGBColorSpace;
     const earthClouds = textureLoader.load('/textures/earth/2k_earth_clouds.jpg', checkLoaded);
 
+    const sunPhotosphere = textureLoader.load('/textures/sun/sun_photosphere_2k.jpg', checkLoaded);
+    sunPhotosphere.colorSpace = THREE.SRGBColorSpace;
+
     const sunCorona = createCoronaTexture();
 
     const maxAnisotropy = Math.min(16, renderer.capabilities.getMaxAnisotropy());
-    [lrocColor, elevation, bumpMap, earthDay, earthNight, earthClouds].forEach((tex) => {
+    [lrocColor, elevation, bumpMap, earthDay, earthNight, earthClouds, sunPhotosphere].forEach((tex) => {
       if (!tex) return;
       tex.anisotropy = maxAnisotropy;
       tex.generateMipmaps = true;
@@ -643,6 +831,7 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
       earthNight,
       earthClouds,
       sunCorona,
+      sunPhotosphere,
     };
 
     // =========================================================================
@@ -668,10 +857,45 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
     sunGroup.add(sunTiltGroup);
     sunTiltGroupRef.current = sunTiltGroup;
 
-    // Sun Sphere
-    const sunGeo = new THREE.SphereGeometry(VISUAL_SCALE_SUN_RADIUS, 48, 48);
-    const sunMat = new THREE.MeshBasicMaterial({ color: 0xfffaea });
-    const sunMesh = new THREE.Mesh(sunGeo, sunMat);
+    // High-Resolution Solar Photosphere Sphere Geometry & Material
+    const sunGeo = new THREE.SphereGeometry(VISUAL_SCALE_SUN_RADIUS, 64, 64);
+    const sunShaderMat = new THREE.ShaderMaterial({
+      uniforms: {
+        uSunMap: { value: sunPhotosphere },
+        uTime: { value: 0 },
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        varying vec3 vNormal;
+        varying vec3 vViewDir;
+        void main() {
+          vUv = uv;
+          vNormal = normalize(normalMatrix * normal);
+          vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+          vViewDir = normalize(-mvPos.xyz);
+          gl_Position = projectionMatrix * mvPos;
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D uSunMap;
+        uniform float uTime;
+        varying vec2 vUv;
+        varying vec3 vNormal;
+        varying vec3 vViewDir;
+        void main() {
+          vec4 texColor = texture2D(uSunMap, vUv);
+          float mu = max(dot(vNormal, vViewDir), 0.0);
+          // Eddington solar limb darkening: I(mu) = I0 * [1 - 0.60 * (1 - mu)]
+          float limbDarkening = 0.40 + 0.60 * pow(mu, 0.65);
+          float flare = sin(vUv.x * 60.0 + uTime * 0.4) * cos(vUv.y * 60.0 + uTime * 0.3) * 0.035;
+          vec3 finalColor = texColor.rgb * (limbDarkening + flare) * 1.35;
+          float rim = pow(1.0 - mu, 3.2);
+          finalColor += vec3(1.0, 0.72, 0.32) * rim * 0.95;
+          gl_FragColor = vec4(finalColor, 1.0);
+        }
+      `,
+    });
+    const sunMesh = new THREE.Mesh(sunGeo, sunShaderMat);
     sunTiltGroup.add(sunMesh);
     sunMeshRef.current = sunMesh;
 
@@ -795,16 +1019,16 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
 
         void main() {
           float nDotL = dot(vWorldNormal, uSunDir);
-          float dayFactor = smoothstep(-0.15, 0.25, nDotL);
+          float dayFactor = smoothstep(-0.12, 0.18, nDotL);
           vec3 dayColor = texture2D(uDayMap, vUv).rgb;
           vec3 nightColor = texture2D(uNightMap, vUv).rgb;
 
-          vec3 litDay = dayColor * (dayFactor * 1.15 + 0.05);
-          vec3 litNight = nightColor * (1.0 - dayFactor) * 2.2;
+          vec3 litDay = dayColor * (dayFactor * 1.25 + 0.04);
+          vec3 litNight = nightColor * (1.0 - dayFactor) * 2.8;
 
           vec3 viewDir = normalize(cameraPosition - vWorldPosition);
           float limb = pow(1.0 - max(dot(viewDir, vWorldNormal), 0.0), 3.0);
-          vec3 atmosphere = vec3(0.25, 0.55, 0.95) * limb * 0.65;
+          vec3 atmosphere = vec3(0.18, 0.52, 0.98) * limb * (dayFactor * 0.85 + 0.15);
 
           gl_FragColor = vec4(litDay + litNight + atmosphere, 1.0);
         }
@@ -1066,6 +1290,9 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
       camera.aspect = newW / newH;
       camera.updateProjectionMatrix();
       renderer.setSize(newW, newH);
+      if (cesiumViewerRef.current && !cesiumViewerRef.current.isDestroyed()) {
+        cesiumViewerRef.current.resize();
+      }
     });
     resizeObserver.observe(container);
 
@@ -1073,7 +1300,7 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
       resizeObserver.disconnect();
       renderer.dispose();
       sunGeo.dispose();
-      sunMat.dispose();
+      sunShaderMat.dispose();
       earthGeo.dispose();
       earthShaderMat.dispose();
       cloudGeo.dispose();
@@ -1085,16 +1312,65 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
     };
   }, [sites]);
 
-  // Dynamic Dataset Layer Material Swap (LROC Color, Elevation)
+  // Switch NASA Moon Trek WMTS Layer on Cesium Globe & Three.js Fallback
   useEffect(() => {
-    if (!moonMeshRef.current || !texturesRef.current) return;
-    const textures = texturesRef.current;
-    const targetTex = activeLayer === 'ELEVATION' ? textures.elevation : textures.lrocColor;
+    const viewer = cesiumViewerRef.current;
+    if (!viewer || viewer.isDestroyed()) return;
 
-    if (targetTex) {
-      const mat = moonMeshRef.current.material as THREE.MeshStandardMaterial;
-      mat.map = targetTex;
-      mat.needsUpdate = true;
+    const lunarEllipsoid = new Cesium.Ellipsoid(
+      LUNAR_MEAN_RADIUS_METERS,
+      LUNAR_MEAN_RADIUS_METERS,
+      LUNAR_MEAN_RADIUS_METERS
+    );
+    const lunarTilingScheme = new Cesium.GeographicTilingScheme({
+      ellipsoid: lunarEllipsoid,
+      numberOfLevelZeroTilesX: 2,
+      numberOfLevelZeroTilesY: 1,
+    });
+
+    let layerUrl = 'https://trek.nasa.gov/tiles/Moon/EQ/LRO_WAC_Mosaic_Global_303ppd_v02/1.0.0/default/default028mm/{z}/{y}/{x}.jpg';
+    let attribution = 'NASA / GSFC / ASU (LROC) - NASA Moon Trek WMTS';
+    let maxZoom = 8;
+
+    if (activeLayer === 'MOON_TREK_LOLA') {
+      layerUrl = 'https://trek.nasa.gov/tiles/Moon/EQ/LRO_LOLA_ClrShade_Global_128ppd_v04/1.0.0/default/default028mm/{z}/{y}/{x}.jpg';
+      attribution = 'NASA / GSFC / Barker et al. (LOLA Altimetry)';
+      maxZoom = 7;
+    } else if (activeLayer === 'MOON_TREK_RELIEF') {
+      layerUrl = 'https://trek.nasa.gov/tiles/Moon/EQ/LRO_LOLAKaguya_Hillshade_60N60S_512ppd/1.0.0/default/default028mm/{z}/{y}/{x}.png';
+      attribution = 'NASA / JAXA SELENE (Kaguya Grayscale Relief)';
+      maxZoom = 8;
+    }
+
+    if (activeLayer.startsWith('MOON_TREK_')) {
+      if (cesiumMountRef.current) cesiumMountRef.current.style.opacity = '1';
+      if (moonMeshRef.current) moonMeshRef.current.visible = false;
+
+      const imageryLayers = viewer.imageryLayers;
+      imageryLayers.removeAll();
+      const provider = new Cesium.UrlTemplateImageryProvider({
+        url: layerUrl,
+        tilingScheme: lunarTilingScheme,
+        ellipsoid: lunarEllipsoid,
+        minimumLevel: 0,
+        maximumLevel: maxZoom,
+        credit: new Cesium.Credit(attribution, true),
+      });
+      imageryLayers.addImageryProvider(provider);
+    } else {
+      // Fallback Three.js lunar texture mode
+      if (cesiumMountRef.current) cesiumMountRef.current.style.opacity = '0';
+      if (moonMeshRef.current) moonMeshRef.current.visible = true;
+
+      if (texturesRef.current && moonMeshRef.current) {
+        const textures = texturesRef.current;
+        const targetTex = activeLayer === 'ELEVATION' ? textures.elevation : textures.lrocColor;
+        if (targetTex) {
+          const mat = moonMeshRef.current.material as THREE.MeshStandardMaterial;
+          mat.map = targetTex;
+          mat.needsUpdate = true;
+        }
+      }
     }
   }, [activeLayer]);
 
@@ -1117,7 +1393,7 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
   useEffect(() => {
     let animationFrameId: number;
     let lastRealTime = performance.now();
-    let currentSimTime = simTimeMs;
+    let currentSimTime = simTimeRef.current;
     let lastNotifiedEpochSecond = 0;
 
     const animate = (time: number) => {
@@ -1129,10 +1405,12 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
       // 1. Advance Simulation Clock
       if (isLive) {
         currentSimTime = Date.now();
-        setSimTimeMs(currentSimTime);
+        simTimeRef.current = currentSimTime;
       } else if (isPlaying) {
         currentSimTime += deltaRealMs * playbackSpeed;
-        setSimTimeMs(currentSimTime);
+        simTimeRef.current = currentSimTime;
+      } else {
+        currentSimTime = simTimeRef.current;
       }
 
       // 2. High-Precision Ephemeris NLERP Interpolation between Valid SPICE Samples
@@ -1405,7 +1683,8 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
       const currentSec = Math.floor(currentSimTime / 1000);
       if (currentSec !== lastNotifiedEpochSecond) {
         lastNotifiedEpochSecond = currentSec;
-        if (onSimulationEpochChange) {
+        setSimTimeMs(currentSimTime);
+        if (onSimulationEpochChange && (isLive || isPlaying)) {
           onSimulationEpochChange(new Date(currentSimTime).toISOString());
         }
 
@@ -1550,6 +1829,74 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
           });
       }
 
+      // Synchronize Cesium Camera in Lockstep with Three.js Camera & Moon
+      const cesiumViewer = cesiumViewerRef.current;
+      if (cesiumViewer && !cesiumViewer.isDestroyed() && cameraRef.current) {
+        const cam = cameraRef.current;
+        const vWorld = cam.position.clone().sub(posMoonSolar);
+        const distUnits = vWorld.length();
+
+        const isMoonTrekActive = activeLayerRef.current.startsWith('MOON_TREK_');
+        if (isMoonTrekActive && moonMeshRef.current) {
+          moonMeshRef.current.visible = false;
+        }
+
+        if (isMoonTrekActive && distUnits <= 120.0 && cesiumMountRef.current) {
+          cesiumMountRef.current.style.opacity = '1';
+
+          const moonWorldQuat = new THREE.Quaternion();
+          if (moonTiltGroupRef.current) {
+            moonTiltGroupRef.current.getWorldQuaternion(moonWorldQuat);
+          }
+
+          const vLocal = vWorld.clone().applyQuaternion(moonWorldQuat.clone().invert());
+          const { latDeg, lonDeg } = cartesianToSelenographic(vLocal);
+
+          const altitudeMeters = Math.max(
+            30000.0,
+            (distUnits - MOON_RADIUS_UNITS) * (LUNAR_MEAN_RADIUS_METERS / MOON_RADIUS_UNITS)
+          );
+
+          const lunarEllipsoid = new Cesium.Ellipsoid(
+            LUNAR_MEAN_RADIUS_METERS,
+            LUNAR_MEAN_RADIUS_METERS,
+            LUNAR_MEAN_RADIUS_METERS
+          );
+
+          const destCesium = Cesium.Cartesian3.fromDegrees(
+            lonDeg,
+            latDeg,
+            altitudeMeters,
+            lunarEllipsoid
+          );
+
+          const upWorld = cam.up.clone().applyQuaternion(cam.quaternion);
+          const upLocal = upWorld.applyQuaternion(moonWorldQuat.clone().invert());
+          const upCesium = new Cesium.Cartesian3(upLocal.z, -upLocal.x, upLocal.y);
+
+          cesiumViewer.camera.setView({
+            destination: destCesium,
+            orientation: {
+              direction: Cesium.Cartesian3.negate(
+                Cesium.Cartesian3.normalize(destCesium, new Cesium.Cartesian3()),
+                new Cesium.Cartesian3()
+              ),
+              up: upCesium,
+            },
+          });
+
+          try {
+            const julianDate = Cesium.JulianDate.fromIso8601(new Date(currentSimTime).toISOString());
+            cesiumViewer.clock.currentTime = julianDate;
+          } catch {
+            // ignore
+          }
+        } else if (distUnits > 120.0 && cesiumMountRef.current) {
+          cesiumMountRef.current.style.opacity = '0';
+          if (moonMeshRef.current) moonMeshRef.current.visible = true;
+        }
+      }
+
       // Render Scene
       if (rendererRef.current && sceneRef.current && cameraRef.current) {
         rendererRef.current.render(sceneRef.current, cameraRef.current);
@@ -1558,7 +1905,7 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
 
     animationFrameId = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(animationFrameId);
-  }, [simTimeMs, isLive, isPlaying, playbackSpeed, sites, selectedSiteId, onSimulationEpochChange, showLabels]);
+  }, [isLive, isPlaying, playbackSpeed, sites, selectedSiteId, onSimulationEpochChange, showLabels]);
 
   // ---------------------------------------------------------------------------
   // Camera Navigation & Zoom Transition Controls (Always Moon-Targeted)
@@ -1750,6 +2097,7 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
     setIsLive(false);
     setSimTimeMs((prev) => {
       const next = prev + hours * 3600 * 1000;
+      simTimeRef.current = next;
       if (onSimulationEpochChange) onSimulationEpochChange(new Date(next).toISOString());
       return next;
     });
@@ -1759,6 +2107,7 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
     setIsLive(false);
     setSimTimeMs((prev) => {
       const next = prev + minutes * 60 * 1000;
+      simTimeRef.current = next;
       if (onSimulationEpochChange) onSimulationEpochChange(new Date(next).toISOString());
       return next;
     });
@@ -1770,8 +2119,21 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
     setPlaybackSpeed(1);
     const now = Date.now();
     setSimTimeMs(now);
+    simTimeRef.current = now;
     if (onSimulationEpochChange) onSimulationEpochChange(new Date(now).toISOString());
   }, [onSimulationEpochChange]);
+
+  const handleResetToMissionEpoch = useCallback(() => {
+    setIsLive(false);
+    setIsPlaying(false);
+    setPlaybackSpeed(1);
+    const targetMs = new Date(`${epochDate}T${epochHour.toString().padStart(2, '0')}:00:00Z`).getTime();
+    if (!isNaN(targetMs)) {
+      setSimTimeMs(targetMs);
+      simTimeRef.current = targetMs;
+      if (onSimulationEpochChange) onSimulationEpochChange(new Date(targetMs).toISOString());
+    }
+  }, [epochDate, epochHour, onSimulationEpochChange]);
 
   const formattedSimUtc = useMemo(() => {
     const d = new Date(simTimeMs);
@@ -1789,6 +2151,12 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
         className="w-full h-full cursor-grab active:cursor-grabbing outline-none" 
       />
 
+      {/* CesiumJS NASA Moon Trek Transparent Overlay Layer */}
+      <div 
+        ref={cesiumMountRef} 
+        className="cesium-viewer-transparent absolute inset-0 w-full h-full pointer-events-none z-10 overflow-hidden" 
+      />
+
       {/* Loading Overlay */}
       {isLoading && (
         <div className="absolute inset-0 bg-[#040608]/90 backdrop-blur-md flex flex-col items-center justify-center gap-3 z-30 transition-opacity duration-500">
@@ -1803,6 +2171,21 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
           TOP COMMAND BAR: UNIFIED SUN-CENTRIC NAVIGATION & CAMERA ZOOM CONTROLS
       ========================================================================= */}
       <div className="absolute top-2 left-2 right-2 flex flex-col gap-1.5 pointer-events-none z-20">
+        {/* Dynamic Ephemeris Calculation Status Overlay */}
+        {isAnalyzing && (
+          <div className="self-center flex items-center gap-2 px-3 py-1 bg-black/95 border border-[#58D8D0]/70 text-[#58D8D0] font-mono text-[10px] uppercase tracking-wider shadow-lg pointer-events-auto">
+            <RefreshCw size={11} className="animate-spin text-[#58D8D0]" />
+            <span>RECALCULATING SPICE DE440 EPHEMERIS FOR {epochDate}...</span>
+          </div>
+        )}
+
+        {/* Dynamic Ephemeris Warning Overlay */}
+        {analysisError && (
+          <div className="self-center flex items-center gap-2 px-3 py-1.5 bg-red-950/95 border border-red-500 text-red-200 font-mono text-[10px] tracking-wide shadow-xl max-w-md text-center pointer-events-auto">
+            <AlertTriangle size={12} className="text-red-400 shrink-0" />
+            <span>{analysisError}</span>
+          </div>
+        )}
         
         {/* Tier 1: System Title, Focus Targets, Zoom Presets & Visibility Toggles */}
         <div className="flex items-center justify-between gap-1.5 p-1 bg-black/95 border border-white/20 pointer-events-auto overflow-x-auto scrollbar-none rounded-none">
@@ -1827,6 +2210,14 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
               <Crosshair size={11} className="text-black" />
               <span>ZOOM TARGET: MOON</span>
             </button>
+
+            <div 
+              title="NASA Moon Trek CesiumJS OGC WMTS active in unified solar system"
+              className="flex items-center gap-1.5 px-2 py-1 text-[9px] font-mono uppercase font-bold tracking-[0.1em] bg-emerald-500/15 text-emerald-300 border border-emerald-500/40 rounded-none"
+            >
+              <Globe size={11} className="text-emerald-400" />
+              <span>MOON TREK WMTS ACTIVE</span>
+            </div>
           </div>
 
           {/* Center-Right Group: Moon-Centric Zoom Presets & In/Out Steppers */}
@@ -1983,29 +2374,51 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
               </select>
             </div>
 
-            {/* Moon Dataset Texture Layer Switcher */}
+            {/* Moon Dataset Texture Layer Switcher (NASA Moon Trek WMTS & Three.js Fallback) */}
             <div className="flex items-center gap-1 shrink-0 pl-1 border-l border-white/15">
-              <Layers size={10} className="text-white/40" />
-              <span className="text-[8.5px] uppercase tracking-wider text-white/40 font-bold">
-                LUNAR TEXTURE:
+              <Layers size={10} className="text-[#00FF9D]" />
+              <span className="text-[8.5px] uppercase tracking-wider text-white/50 font-bold">
+                MAP LAYER:
               </span>
               <button
                 type="button"
-                onClick={() => setActiveLayer('LROC_IMAGERY')}
+                onClick={() => setActiveLayer('MOON_TREK_WAC')}
+                title="NASA Moon Trek LROC WAC Global Mosaic (100m/pixel OGC WMTS)"
                 className={`px-2 py-0.5 text-[9px] font-mono uppercase font-bold tracking-wider transition-all cursor-pointer rounded-none ${
-                  activeLayer === 'LROC_IMAGERY' ? 'bg-[#ECC068] text-black font-extrabold border border-[#ECC068]' : 'text-white/60 hover:text-white hover:bg-white/10'
+                  activeLayer === 'MOON_TREK_WAC' ? 'bg-[#00FF9D] text-black font-extrabold border border-[#00FF9D]' : 'text-white/60 hover:text-white hover:bg-white/10'
                 }`}
               >
-                LROC 4K
+                LROC WAC 100M
               </button>
               <button
                 type="button"
-                onClick={() => setActiveLayer('ELEVATION')}
+                onClick={() => setActiveLayer('MOON_TREK_RELIEF')}
+                title="NASA Moon Trek LOLA + Kaguya Grayscale Relief (59m/pixel)"
                 className={`px-2 py-0.5 text-[9px] font-mono uppercase font-bold tracking-wider transition-all cursor-pointer rounded-none ${
-                  activeLayer === 'ELEVATION' ? 'bg-[#58D8D0] text-black font-extrabold border border-[#58D8D0]' : 'text-white/60 hover:text-white hover:bg-white/10'
+                  activeLayer === 'MOON_TREK_RELIEF' ? 'bg-[#58D8D0] text-black font-extrabold border border-[#58D8D0]' : 'text-white/60 hover:text-white hover:bg-white/10'
                 }`}
               >
-                Elevation
+                Kaguya Relief
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveLayer('MOON_TREK_LOLA')}
+                title="NASA Moon Trek LOLA Altimetry Color Shading"
+                className={`px-2 py-0.5 text-[9px] font-mono uppercase font-bold tracking-wider transition-all cursor-pointer rounded-none ${
+                  activeLayer === 'MOON_TREK_LOLA' ? 'bg-[#ECC068] text-black font-extrabold border border-[#ECC068]' : 'text-white/60 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                LOLA Altimetry
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveLayer('LROC_IMAGERY')}
+                title="Three.js 4K LROC Photometry Texture"
+                className={`px-1.5 py-0.5 text-[9px] font-mono uppercase font-bold tracking-wider transition-all cursor-pointer rounded-none ${
+                  activeLayer === 'LROC_IMAGERY' ? 'bg-white text-black font-extrabold border border-white' : 'text-white/40 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                4K Texture
               </button>
             </div>
           </div>
@@ -2299,18 +2712,25 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
           {/* Reset Time Button */}
           <button
             type="button"
-            onClick={handleResetTimeToLive}
-            title="Reset Simulation Time to Current Live UTC"
+            onClick={isLive ? handleResetTimeToLive : handleResetToMissionEpoch}
+            title={isLive ? "Reset Simulation Time to Current Live UTC" : `Reset Simulation Time to Selected Mission Epoch (${epochDate} ${String(epochHour).padStart(2, '0')}:00 UTC)`}
             className="flex items-center gap-1 px-1.5 py-0.5 text-[9px] font-mono text-cyan-300 hover:text-white hover:bg-white/10 cursor-pointer border border-cyan-400/30 rounded-none"
           >
             <RotateCcw size={10} />
             <span>RESET</span>
           </button>
 
-          {/* Monospace Clock Display */}
+          {/* Monospace Clock Display with Synchronization Status */}
           <div className="px-2 sm:px-2.5 py-0.5 sm:py-1 bg-black border border-white/20 font-mono text-[9.5px] sm:text-[10.5px] text-white font-bold tracking-wider flex items-center gap-1 sm:gap-1.5 rounded-none tabular-nums">
-            <Clock size={10} className="text-white/40" />
-            <span className="truncate max-w-[130px] sm:max-w-none">{formattedSimUtc}</span>
+            <Clock size={10} className={isLive ? "text-emerald-400" : "text-[#58D8D0]"} />
+            <span className="truncate max-w-[140px] sm:max-w-none">{formattedSimUtc}</span>
+            <span className={`text-[8.5px] px-1 py-0.2 font-mono uppercase tracking-widest hidden sm:inline-block ${
+              isLive
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40'
+                : 'bg-[#58D8D0]/15 text-[#58D8D0] border border-[#58D8D0]/40'
+            }`}>
+              {isLive ? 'LIVE' : 'SYNCED'}
+            </span>
           </div>
 
           {/* Speed Presets: 1×, 10×, 1000×, 1h/s, 1d/s, CUSTOM */}

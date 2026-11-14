@@ -13,6 +13,32 @@ export const DIRECT_BACKEND_ORIGIN =
 const API_BASE = import.meta.env.VITE_API_BASE || '/api/v1';
 const DIRECT_API_BASE = DIRECT_BACKEND_ORIGIN ? `${DIRECT_BACKEND_ORIGIN}${API_BASE}` : API_BASE;
 
+export interface MoonTrekLayerMetadata {
+  id: string;
+  title: string;
+  description: string;
+  projection: 'EQ' | 'SP' | 'NP';
+  crs: string;
+  format: 'image/jpeg' | 'image/png';
+  tileMatrixSet: string;
+  minZoom: number;
+  maxZoom: number;
+  resolutionMpp: number;
+  wmtsEndpoint: string;
+  tileUrlTemplate: string;
+  localFallbackUrl?: string;
+  bounds: {
+    west: number;
+    south: number;
+    east: number;
+    north: number;
+  };
+  instrument: string;
+  mission: string;
+  attribution: string;
+  isElevationOrShade: boolean;
+}
+
 export interface BackendHealth {
   status: string;
   service: string;
@@ -926,5 +952,109 @@ export const lunarApi = {
     }
     const directJson = await directRes.json();
     return directJson.data !== undefined ? directJson.data : directJson;
+  },
+
+  /**
+   * NASA Moon Trek WMTS Verified Layers Catalog
+   */
+  async getMoonTrekLayers(): Promise<MoonTrekLayerMetadata[]> {
+    try {
+      const res = await fetch(`${API_BASE}/trek/layers`);
+      if (res.ok) {
+        const json = await res.json();
+        if (json.layers) return json.layers;
+      }
+    } catch {
+      // Direct origin fallback
+    }
+    const directUrl = DIRECT_BACKEND_ORIGIN ? `${DIRECT_BACKEND_ORIGIN}${API_BASE}/trek/layers` : `${API_BASE}/trek/layers`;
+    try {
+      const directRes = await fetch(directUrl);
+      if (directRes.ok) {
+        const directJson = await directRes.json();
+        if (directJson.layers) return directJson.layers;
+      }
+    } catch {
+      // ignore
+    }
+    return [
+      {
+        id: 'LRO_WAC_Mosaic_Global_303ppd_v02',
+        title: 'LROC WAC Global Photographic Mosaic',
+        description: 'NASA LRO Wide Angle Camera global morphologic mosaic (~100m/pixel, 303 pixels/degree).',
+        projection: 'EQ',
+        crs: 'urn:ogc:def:crs:EPSG::104903',
+        format: 'image/jpeg',
+        tileMatrixSet: 'default028mm',
+        minZoom: 0,
+        maxZoom: 8,
+        resolutionMpp: 100,
+        wmtsEndpoint: 'https://trek.nasa.gov/tiles/Moon/EQ/LRO_WAC_Mosaic_Global_303ppd_v02/1.0.0/',
+        tileUrlTemplate: 'https://trek.nasa.gov/tiles/Moon/EQ/LRO_WAC_Mosaic_Global_303ppd_v02/1.0.0/default/default028mm/{z}/{y}/{x}.jpg',
+        localFallbackUrl: '/tiles/lroc/{z}/{x}/{y}.png',
+        bounds: { west: -180, south: -90, east: 180, north: 90 },
+        instrument: 'Wide Angle Camera (WAC)',
+        mission: 'Lunar Reconnaissance Orbiter (LRO)',
+        attribution: 'NASA / GSFC / Arizona State University (LROC)',
+        isElevationOrShade: false,
+      },
+      {
+        id: 'LRO_LOLA_ClrShade_Global_128ppd_v04',
+        title: 'LOLA Global Color Altimetry Hillshade',
+        description: 'LOLA topography colorized relief map (~237m/pixel, 128 ppd).',
+        projection: 'EQ',
+        crs: 'urn:ogc:def:crs:EPSG::104903',
+        format: 'image/png',
+        tileMatrixSet: 'default028mm',
+        minZoom: 0,
+        maxZoom: 7,
+        resolutionMpp: 237,
+        wmtsEndpoint: 'https://trek.nasa.gov/tiles/Moon/EQ/LRO_LOLA_ClrShade_Global_128ppd_v04/1.0.0/',
+        tileUrlTemplate: 'https://trek.nasa.gov/tiles/Moon/EQ/LRO_LOLA_ClrShade_Global_128ppd_v04/1.0.0/default/default028mm/{z}/{y}/{x}.png',
+        bounds: { west: -180, south: -90, east: 180, north: 90 },
+        instrument: 'Lunar Orbiter Laser Altimeter (LOLA)',
+        mission: 'Lunar Reconnaissance Orbiter (LRO)',
+        attribution: 'NASA / GSFC / LOLA Science Team',
+        isElevationOrShade: true,
+      },
+      {
+        id: 'LRO_LOLAKaguya_Hillshade_60N60S_512ppd',
+        title: 'LOLA & Kaguya TC High-Detail Grayscale Shaded Relief',
+        description: 'LRO LOLA and JAXA Kaguya Terrain Camera stereo photometry (~59m/pixel, 512 ppd).',
+        projection: 'EQ',
+        crs: 'urn:ogc:def:crs:EPSG::104903',
+        format: 'image/png',
+        tileMatrixSet: 'default028mm',
+        minZoom: 0,
+        maxZoom: 8,
+        resolutionMpp: 59,
+        wmtsEndpoint: 'https://trek.nasa.gov/tiles/Moon/EQ/LRO_LOLAKaguya_Hillshade_60N60S_512ppd/1.0.0/',
+        tileUrlTemplate: 'https://trek.nasa.gov/tiles/Moon/EQ/LRO_LOLAKaguya_Hillshade_60N60S_512ppd/1.0.0/default/default028mm/{z}/{y}/{x}.png',
+        bounds: { west: -180, south: -60, east: 180, north: 60 },
+        instrument: 'LOLA + Terrain Camera (TC)',
+        mission: 'LRO & JAXA SELENE (Kaguya)',
+        attribution: 'NASA / GSFC / JAXA / USGS Astrogeology',
+        isElevationOrShade: true,
+      },
+      {
+        id: 'LRO_LOLA_ClrShade_SPole75_30mp_v04_EQ',
+        title: 'LOLA South Pole Artemis Exploration Zone Color Shading',
+        description: 'High-resolution polar altimetry color shading from 75°S to 90°S (~30m/pixel).',
+        projection: 'EQ',
+        crs: 'urn:ogc:def:crs:EPSG::104903',
+        format: 'image/png',
+        tileMatrixSet: 'default028mm',
+        minZoom: 0,
+        maxZoom: 9,
+        resolutionMpp: 30,
+        wmtsEndpoint: 'https://trek.nasa.gov/tiles/Moon/EQ/LRO_LOLA_ClrShade_SPole75_30mp_v04_EQ/1.0.0/',
+        tileUrlTemplate: 'https://trek.nasa.gov/tiles/Moon/EQ/LRO_LOLA_ClrShade_SPole75_30mp_v04_EQ/1.0.0/default/default028mm/{z}/{y}/{x}.png',
+        bounds: { west: -180, south: -90, east: 180, north: -75 },
+        instrument: 'Lunar Orbiter Laser Altimeter (LOLA)',
+        mission: 'Lunar Reconnaissance Orbiter (LRO)',
+        attribution: 'NASA / GSFC / Barker et al. (PGDA)',
+        isElevationOrShade: true,
+      },
+    ];
   },
 };

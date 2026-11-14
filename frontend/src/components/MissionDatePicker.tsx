@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, RotateCcw, Monitor } from 'lucide-react';
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, RotateCcw, Monitor, AlertTriangle, Rocket } from 'lucide-react';
 
 export interface MissionDatePickerProps {
   value: string; // YYYY-MM-DD
@@ -18,44 +18,115 @@ const MONTH_NAMES = [
 
 const WEEKDAY_NAMES = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
 
-// Standard Artemis III reference epoch
+// Reference epochs
 const ARTEMIS_III_EPOCH = '2026-10-14';
+const FUTURE_MISSION_EPOCH = '2027-03-15';
+const APOLLO_11_EPOCH = '1969-07-20';
+
+/**
+ * Validates any raw date string against Gregorian calendar rules and SPICE ephemeris limits.
+ * Prevents JavaScript Date automatic rollover (e.g., Feb 30 rolling to Mar 2).
+ */
+export function validateDateInput(
+  rawStr: string,
+  minStr = '1900-01-01',
+  maxStr = '2050-01-01'
+): { isValid: boolean; normalized?: string; error?: string } {
+  const trimmed = rawStr.trim();
+  if (!trimmed) {
+    return { isValid: false, error: 'Date is required (format: YYYY-MM-DD)' };
+  }
+
+  // Normalize separators: accept '-', '/', '.'
+  const normalizedSep = trimmed.replace(/[\/\.]/g, '-');
+  const match = normalizedSep.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (!match) {
+    return { isValid: false, error: 'Invalid format. Use YYYY-MM-DD (e.g. 2027-03-15)' };
+  }
+
+  const year = parseInt(match[1], 10);
+  const month = parseInt(match[2], 10);
+  const day = parseInt(match[3], 10);
+
+  if (month < 1 || month > 12) {
+    return { isValid: false, error: `Invalid month (${month}). Must be 01–12` };
+  }
+
+  // Days in month calculation (UTC)
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  if (day < 1 || day > daysInMonth) {
+    return {
+      isValid: false,
+      error: `Invalid day (${day}) for ${MONTH_NAMES[month - 1]} ${year} (max ${daysInMonth} days)`,
+    };
+  }
+
+  const normalized = `${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+
+  if (minStr && normalized < minStr) {
+    return {
+      isValid: false,
+      normalized,
+      error: `Date is earlier than SPICE ephemeris coverage (${minStr})`,
+    };
+  }
+
+  if (maxStr && normalized > maxStr) {
+    return {
+      isValid: false,
+      normalized,
+      error: `Date is beyond NASA SPICE DE440 coverage (${maxStr})`,
+    };
+  }
+
+  return { isValid: true, normalized };
+}
 
 export const MissionDatePicker: React.FC<MissionDatePickerProps> = ({
   value,
   onChange,
   className = '',
   placeholder = 'YYYY-MM-DD',
-  min = '2024-01-01',
-  max = '2035-12-31',
+  min = '1900-01-01',
+  max = '2050-01-01',
   disabled = false,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [inputValue, setInputValue] = useState(value || '');
+  const [inputError, setInputError] = useState<string | null>(null);
+  const [isFocused, setIsFocused] = useState<boolean>(false);
 
-  // Year and month currently being viewed in the dropdown calendar
-  const initialDate = value && !isNaN(new Date(value + 'T00:00:00Z').getTime())
-    ? new Date(value + 'T00:00:00Z')
-    : new Date('2026-10-14T00:00:00Z');
+  // Parse initial year and month
+  const getParsedDate = (val: string): { year: number; month: number } => {
+    const res = validateDateInput(val, '', '');
+    if (res.isValid && res.normalized) {
+      const parts = res.normalized.split('-').map(Number);
+      return { year: parts[0], month: parts[1] - 1 };
+    }
+    return { year: 2026, month: 9 }; // Oct 2026 fallback
+  };
 
-  const [viewYear, setViewYear] = useState(initialDate.getUTCFullYear());
-  const [viewMonth, setViewMonth] = useState(initialDate.getUTCMonth());
+  const parsedInitial = getParsedDate(value);
+  const [viewYear, setViewYear] = useState(parsedInitial.year);
+  const [viewMonth, setViewMonth] = useState(parsedInitial.month);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const nativeDateInputRef = useRef<HTMLInputElement>(null);
 
-  // Sync internal text state whenever value prop updates from outside
+  // Sync internal text state whenever value prop updates from outside, UNLESS user is actively typing
   useEffect(() => {
-    setInputValue(value || '');
-    if (value && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
-      const d = new Date(value + 'T00:00:00Z');
-      if (!isNaN(d.getTime())) {
-        setViewYear(d.getUTCFullYear());
-        setViewMonth(d.getUTCMonth());
+    if (!isFocused) {
+      setInputValue(value || '');
+      const valid = validateDateInput(value || '', min, max);
+      if (valid.isValid && valid.normalized) {
+        const parts = valid.normalized.split('-').map(Number);
+        setViewYear(parts[0]);
+        setViewMonth(parts[1] - 1);
+        setInputError(null);
       }
     }
-  }, [value]);
+  }, [value, isFocused, min, max]);
 
   // Click outside to dismiss calendar popup
   useEffect(() => {
@@ -77,43 +148,49 @@ export const MissionDatePicker: React.FC<MissionDatePickerProps> = ({
     const val = e.target.value;
     setInputValue(val);
 
-    // If user typed/backspaced to a valid YYYY-MM-DD, emit it live
-    if (/^\d{4}-\d{2}-\d{2}$/.test(val)) {
-      const parsed = new Date(val + 'T00:00:00Z');
-      if (!isNaN(parsed.getTime())) {
-        onChange(val);
-        setViewYear(parsed.getUTCFullYear());
-        setViewMonth(parsed.getUTCMonth());
+    // If user has entered a full 10-char date or normalized pattern, validate live
+    const trimmed = val.trim();
+    if (trimmed.length >= 10 || /^(\d{4})[\/\.-](\d{1,2})[\/\.-](\d{1,2})$/.test(trimmed)) {
+      const validation = validateDateInput(trimmed, min, max);
+      if (validation.isValid && validation.normalized) {
+        setInputError(null);
+        onChange(validation.normalized);
+        const parts = validation.normalized.split('-').map(Number);
+        setViewYear(parts[0]);
+        setViewMonth(parts[1] - 1);
+      } else if (validation.error) {
+        setInputError(validation.error);
+      }
+    } else {
+      // Clear error while actively typing partial date
+      if (inputError && trimmed.length < 10) {
+        setInputError(null);
       }
     }
   };
 
-  // Validate on blur: if user left partial or invalid date, restore valid value or normalize
+  // Validate on blur: do NOT silently reset; show meaningful error and keep user text
   const handleInputBlur = () => {
+    setIsFocused(false);
     const trimmed = inputValue.trim();
-    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-      const d = new Date(trimmed + 'T00:00:00Z');
-      if (!isNaN(d.getTime())) {
-        onChange(trimmed);
-        return;
-      }
+
+    if (!trimmed) {
+      setInputError('Date cannot be empty');
+      return;
     }
 
-    // Attempt normalizing formats like 2026/10/14 or 2026.10.14
-    const normalized = trimmed.replace(/[\/\.]/g, '-');
-    const match = normalized.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-    if (match) {
-      const formatted = `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
-      const d = new Date(formatted + 'T00:00:00Z');
-      if (!isNaN(d.getTime())) {
-        setInputValue(formatted);
-        onChange(formatted);
-        return;
-      }
+    const validation = validateDateInput(trimmed, min, max);
+    if (validation.isValid && validation.normalized) {
+      setInputError(null);
+      setInputValue(validation.normalized);
+      onChange(validation.normalized);
+      const parts = validation.normalized.split('-').map(Number);
+      setViewYear(parts[0]);
+      setViewMonth(parts[1] - 1);
+    } else {
+      setInputError(validation.error || 'Invalid date entered');
+      // Intentionally preserve inputValue so the user can see what was entered and fix it
     }
-
-    // Revert to known valid prop value if invalid
-    setInputValue(value);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -122,6 +199,7 @@ export const MissionDatePicker: React.FC<MissionDatePickerProps> = ({
       setIsOpen(false);
     } else if (e.key === 'Escape') {
       setInputValue(value);
+      setInputError(null);
       setIsOpen(false);
     }
   };
@@ -135,9 +213,9 @@ export const MissionDatePicker: React.FC<MissionDatePickerProps> = ({
     e.stopPropagation();
     if (viewMonth === 0) {
       setViewMonth(11);
-      setViewYear(y => y - 1);
+      setViewYear((y) => Math.max(1900, y - 1));
     } else {
-      setViewMonth(m => m - 1);
+      setViewMonth((m) => m - 1);
     }
   };
 
@@ -145,17 +223,23 @@ export const MissionDatePicker: React.FC<MissionDatePickerProps> = ({
     e.stopPropagation();
     if (viewMonth === 11) {
       setViewMonth(0);
-      setViewYear(y => y + 1);
+      setViewYear((y) => Math.min(2050, y + 1));
     } else {
-      setViewMonth(m => m + 1);
+      setViewMonth((m) => m + 1);
     }
   };
 
   const selectDate = (year: number, month: number, day: number) => {
-    const formatted = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    setInputValue(formatted);
-    onChange(formatted);
-    setIsOpen(false);
+    const formatted = `${year.toString().padStart(4, '0')}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const validation = validateDateInput(formatted, min, max);
+    if (validation.isValid && validation.normalized) {
+      setInputValue(validation.normalized);
+      setInputError(null);
+      onChange(validation.normalized);
+      setIsOpen(false);
+    } else {
+      setInputError(validation.error || 'Selected date is outside valid coverage');
+    }
   };
 
   // Trigger OS-level native date picker if supported
@@ -168,8 +252,7 @@ export const MissionDatePicker: React.FC<MissionDatePickerProps> = ({
         } else {
           nativeDateInputRef.current.focus();
         }
-      } catch (err) {
-        // Fallback: toggle custom picker
+      } catch {
         setIsOpen(true);
       }
     }
@@ -178,12 +261,16 @@ export const MissionDatePicker: React.FC<MissionDatePickerProps> = ({
   const todayIso = new Date().toISOString().split('T')[0];
 
   return (
-    <div ref={containerRef} className={`relative inline-block w-full min-w-0 ${className}`}>
+    <div ref={containerRef} className={`relative flex flex-col w-full min-w-0 ${className}`}>
       {/* Visual Text & Calendar Button Container */}
       <div
         onClick={() => inputRef.current?.focus()}
-        className={`flex items-center w-full h-8 sm:h-8.5 bg-black border rounded-lg px-1.5 gap-1 transition-all cursor-pointer ${
-          isOpen ? 'border-[#FFFFFF] ring-1 ring-[#FFFFFF]/30' : 'border-white/20 hover:border-white/40'
+        className={`flex items-center w-full h-8 sm:h-8.5 bg-black border px-2 gap-1.5 transition-all cursor-pointer rounded-none ${
+          inputError
+            ? 'border-red-500/70 ring-1 ring-red-500/30'
+            : isOpen
+            ? 'border-[#58D8D0] ring-1 ring-[#58D8D0]/30'
+            : 'border-white/20 hover:border-white/40'
         }`}
       >
         {/* Calendar Trigger Icon Button ON THE LEFT */}
@@ -191,13 +278,13 @@ export const MissionDatePicker: React.FC<MissionDatePickerProps> = ({
           type="button"
           onClick={(e) => {
             e.stopPropagation();
-            if (!disabled) setIsOpen(prev => !prev);
+            if (!disabled) setIsOpen((prev) => !prev);
           }}
           disabled={disabled}
           title="Open interactive calendar (or click text to type/backspace)"
-          className="text-white/50 hover:text-[#FFFFFF] transition-colors flex items-center justify-center shrink-0 cursor-pointer focus:outline-none p-0"
+          className="text-white/50 hover:text-[#58D8D0] transition-colors flex items-center justify-center shrink-0 cursor-pointer focus:outline-none p-0"
         >
-          <CalendarIcon size={13} className={isOpen ? 'text-[#FFFFFF]' : ''} />
+          <CalendarIcon size={13} className={isOpen ? 'text-[#58D8D0]' : inputError ? 'text-red-400' : ''} />
         </button>
 
         <input
@@ -205,13 +292,28 @@ export const MissionDatePicker: React.FC<MissionDatePickerProps> = ({
           type="text"
           value={inputValue}
           onChange={handleInputChange}
+          onFocus={() => setIsFocused(true)}
           onBlur={handleInputBlur}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           disabled={disabled}
-          className="min-w-0 flex-1 bg-transparent p-0 text-white font-mono text-[11px] outline-none placeholder:text-white/30 tracking-tight disabled:opacity-50"
+          className="min-w-0 flex-1 bg-transparent p-0 text-white font-mono text-xs outline-none placeholder:text-white/30 tracking-tight disabled:opacity-50"
         />
+
+        {value && !inputError && (
+          <span className="text-[9px] font-mono px-1 py-0.2 bg-[#58D8D0]/10 text-[#58D8D0] border border-[#58D8D0]/30 shrink-0 uppercase tracking-widest hidden sm:inline-block">
+            UTC
+          </span>
+        )}
       </div>
+
+      {/* Meaningful Validation Error Feedback */}
+      {inputError && (
+        <div className="flex items-center gap-1.5 px-2 py-1 mt-1 bg-red-950/70 border border-red-500/50 text-red-300 font-mono text-[10px] leading-tight animate-in fade-in duration-200">
+          <AlertTriangle size={11} className="text-red-400 shrink-0" />
+          <span className="flex-1">{inputError}</span>
+        </div>
+      )}
 
       {/* Hidden Native Date Input for OS Picker Integration */}
       <input
@@ -222,8 +324,12 @@ export const MissionDatePicker: React.FC<MissionDatePickerProps> = ({
         max={max}
         onChange={(e) => {
           if (e.target.value) {
-            setInputValue(e.target.value);
-            onChange(e.target.value);
+            const validation = validateDateInput(e.target.value, min, max);
+            if (validation.isValid && validation.normalized) {
+              setInputValue(validation.normalized);
+              setInputError(null);
+              onChange(validation.normalized);
+            }
           }
         }}
         className="sr-only"
@@ -234,7 +340,7 @@ export const MissionDatePicker: React.FC<MissionDatePickerProps> = ({
       {/* Custom Aerospace Interactive Calendar Dropdown */}
       {isOpen && (
         <div
-          className="absolute z-50 top-full mt-1.5 left-0 w-72 max-w-[calc(100vw-2rem)] bg-[#08090C] border border-white/20 shadow-2xl p-3 text-white font-mono select-none"
+          className="absolute z-50 top-full mt-1.5 left-0 w-80 max-w-[calc(100vw-2rem)] bg-[#08090C] border border-white/20 shadow-2xl p-3 text-white font-mono select-none"
           style={{ backdropFilter: 'blur(12px)' }}
         >
           {/* Header: Month / Year Navigation */}
@@ -242,7 +348,7 @@ export const MissionDatePicker: React.FC<MissionDatePickerProps> = ({
             <button
               type="button"
               onClick={handlePrevMonth}
-              className="p-1 hover:bg-white/10 text-white/70 hover:text-white transition-colors"
+              className="p-1 hover:bg-white/10 text-white/70 hover:text-white transition-colors cursor-pointer"
               title="Previous Month"
             >
               <ChevronLeft size={14} />
@@ -255,9 +361,9 @@ export const MissionDatePicker: React.FC<MissionDatePickerProps> = ({
               <select
                 value={viewYear}
                 onChange={(e) => setViewYear(parseInt(e.target.value))}
-                className="bg-black border border-white/20 text-xs text-[#FFFFFF] font-bold px-1 py-0.5 outline-none cursor-pointer"
+                className="bg-black border border-white/20 text-xs text-[#58D8D0] font-bold px-1.5 py-0.5 outline-none cursor-pointer"
               >
-                {Array.from({ length: 12 }, (_, i) => 2024 + i).map(y => (
+                {Array.from({ length: 151 }, (_, i) => 1900 + i).map((y) => (
                   <option key={y} value={y} className="bg-black text-white">
                     {y}
                   </option>
@@ -268,7 +374,7 @@ export const MissionDatePicker: React.FC<MissionDatePickerProps> = ({
             <button
               type="button"
               onClick={handleNextMonth}
-              className="p-1 hover:bg-white/10 text-white/70 hover:text-white transition-colors"
+              className="p-1 hover:bg-white/10 text-white/70 hover:text-white transition-colors cursor-pointer"
               title="Next Month"
             >
               <ChevronRight size={14} />
@@ -277,7 +383,7 @@ export const MissionDatePicker: React.FC<MissionDatePickerProps> = ({
 
           {/* Weekday Names Header */}
           <div className="grid grid-cols-7 gap-1 text-center text-[10px] text-white/40 font-bold uppercase mb-1">
-            {WEEKDAY_NAMES.map(day => (
+            {WEEKDAY_NAMES.map((day) => (
               <div key={day} className="py-1">
                 {day}
               </div>
@@ -296,7 +402,7 @@ export const MissionDatePicker: React.FC<MissionDatePickerProps> = ({
                   key={`prev-${i}`}
                   type="button"
                   onClick={() => selectDate(prevYear, prevMonth, dayNum)}
-                  className="py-1.5 text-white/20 hover:bg-white/5 hover:text-white/60 text-[11px] transition-colors"
+                  className="py-1.5 text-white/20 hover:bg-white/5 hover:text-white/60 text-[11px] transition-colors cursor-pointer"
                 >
                   {dayNum}
                 </button>
@@ -315,15 +421,15 @@ export const MissionDatePicker: React.FC<MissionDatePickerProps> = ({
                   key={`cur-${dayNum}`}
                   type="button"
                   onClick={() => selectDate(viewYear, viewMonth, dayNum)}
-                  className={`py-1.5 text-xs transition-all flex items-center justify-center relative ${
+                  className={`py-1.5 text-xs transition-all flex items-center justify-center relative cursor-pointer ${
                     isSelected
-                      ? 'bg-[#FFFFFF] text-black font-bold shadow-md shadow-[#FFFFFF]/30'
-                      : 'hover:bg-white/10 hover:text-[#FFFFFF] text-white/90'
+                      ? 'bg-[#58D8D0] text-black font-bold shadow-md shadow-[#58D8D0]/30'
+                      : 'hover:bg-white/10 hover:text-[#58D8D0] text-white/90'
                   }`}
                 >
                   {dayNum}
                   {isToday && !isSelected && (
-                    <span className="absolute bottom-0.5 w-1 h-1 rounded-full bg-[#FFFFFF]" />
+                    <span className="absolute bottom-0.5 w-1 h-1 rounded-full bg-[#58D8D0]" />
                   )}
                 </button>
               );
@@ -341,7 +447,7 @@ export const MissionDatePicker: React.FC<MissionDatePickerProps> = ({
                   key={`next-${i}`}
                   type="button"
                   onClick={() => selectDate(nextYear, nextMonth, i + 1)}
-                  className="py-1.5 text-white/20 hover:bg-white/5 hover:text-white/60 text-[11px] transition-colors"
+                  className="py-1.5 text-white/20 hover:bg-white/5 hover:text-white/60 text-[11px] transition-colors cursor-pointer"
                 >
                   {i + 1}
                 </button>
@@ -350,42 +456,73 @@ export const MissionDatePicker: React.FC<MissionDatePickerProps> = ({
           </div>
 
           {/* Quick Presets & Utilities Footer */}
-          <div className="mt-3 pt-2 border-t border-white/10 flex items-center justify-between text-[10px]">
+          <div className="mt-3 pt-2 border-t border-white/10 flex flex-wrap items-center justify-between gap-1.5 text-[10px]">
+            {/* Future Mission (2027-03-15) */}
             <button
               type="button"
               onClick={() => {
-                setInputValue(ARTEMIS_III_EPOCH);
-                onChange(ARTEMIS_III_EPOCH);
-                setViewYear(2026);
-                setViewMonth(9); // Oct is month index 9
-                setIsOpen(false);
+                const parts = FUTURE_MISSION_EPOCH.split('-').map(Number);
+                selectDate(parts[0], parts[1] - 1, parts[2]);
+                setViewYear(parts[0]);
+                setViewMonth(parts[1] - 1);
               }}
-              className="text-white/60 hover:text-[#FFFFFF] flex items-center gap-1 transition-colors"
+              className="text-[#ECC068] hover:text-white flex items-center gap-1 transition-colors cursor-pointer font-bold"
+              title="Set to Future Mission Date (2027-03-15)"
+            >
+              <Rocket size={10} />
+              <span>Future 2027</span>
+            </button>
+
+            {/* Artemis III (2026-10-14) */}
+            <button
+              type="button"
+              onClick={() => {
+                const parts = ARTEMIS_III_EPOCH.split('-').map(Number);
+                selectDate(parts[0], parts[1] - 1, parts[2]);
+                setViewYear(parts[0]);
+                setViewMonth(parts[1] - 1);
+              }}
+              className="text-white/70 hover:text-[#58D8D0] flex items-center gap-1 transition-colors cursor-pointer"
               title="Reset to Artemis III Reference Epoch (2026-10-14)"
             >
               <RotateCcw size={10} />
               <span>Artemis III</span>
             </button>
 
+            {/* Apollo 11 (1969-07-20) */}
             <button
               type="button"
               onClick={() => {
-                setInputValue(todayIso);
-                onChange(todayIso);
+                const parts = APOLLO_11_EPOCH.split('-').map(Number);
+                selectDate(parts[0], parts[1] - 1, parts[2]);
+                setViewYear(parts[0]);
+                setViewMonth(parts[1] - 1);
+              }}
+              className="text-white/50 hover:text-white transition-colors cursor-pointer"
+              title="Apollo 11 Touchdown (1969-07-20)"
+            >
+              Apollo 11
+            </button>
+
+            {/* Today */}
+            <button
+              type="button"
+              onClick={() => {
                 const d = new Date();
+                selectDate(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
                 setViewYear(d.getUTCFullYear());
                 setViewMonth(d.getUTCMonth());
-                setIsOpen(false);
               }}
-              className="text-white/60 hover:text-[#FFFFFF] transition-colors"
+              className="text-white/60 hover:text-[#58D8D0] transition-colors cursor-pointer"
             >
               Today
             </button>
 
+            {/* Native OS Picker */}
             <button
               type="button"
               onClick={openNativePicker}
-              className="text-white/40 hover:text-white flex items-center gap-1 transition-colors"
+              className="text-white/40 hover:text-white flex items-center gap-1 transition-colors cursor-pointer"
               title="Open browser native calendar"
             >
               <Monitor size={10} />
@@ -397,5 +534,5 @@ export const MissionDatePicker: React.FC<MissionDatePickerProps> = ({
     </div>
   );
 };
-export default MissionDatePicker;
 
+export default MissionDatePicker;

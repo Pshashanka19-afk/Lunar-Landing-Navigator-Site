@@ -45,6 +45,27 @@ describe('Sites API integration tests', () => {
     expect(res.body.success).toBe(true);
     expect(res.body.data.demonstrationSites.length).toBeGreaterThan(0);
     expect(res.body.data.demonstrationSites[0].name).toContain('Shackleton');
+    const sites = res.body.data.demonstrationSites as Array<{
+      id: string; name: string; latitudeDeg: number; longitudeDeg: number;
+    }>;
+    const names = sites.map((site) => site.name);
+    const ids = sites.map((site) => site.id);
+    expect(new Set(ids).size).toBe(ids.length); // IDs must be unique for frontend keys and API consumers
+
+    for (const requiredName of [
+      'Statio Shiv Shakti', 'Mons Mouton', 'Malapert Massif', 'Haworth',
+      'Peak Near Shackleton', 'Nobile Rim 1',
+    ]) {
+      expect(names.some((name) => name.includes(requiredName))).toBe(true);
+    }
+
+    const byId = Object.fromEntries(sites.map((site) => [site.id, site]));
+    expect(byId['statio-shiv-shakti']).toMatchObject({ latitudeDeg: -69.3734, longitudeDeg: 32.3198 });
+    expect(byId['mons-mouton']).toMatchObject({ latitudeDeg: -85.416, longitudeDeg: 31.851 });
+    expect(byId['malapert-massif']).toMatchObject({ latitudeDeg: -85.9948, longitudeDeg: -0.23578 });
+    expect(byId['haworth-crater-rim']).toMatchObject({ latitudeDeg: -86.7639, longitudeDeg: -22.777 });
+    expect(byId['peak-near-shackleton']).toMatchObject({ latitudeDeg: -88.811, longitudeDeg: 123.6901 });
+    expect(byId['nobile-rim-1']).toMatchObject({ latitudeDeg: -85.295, longitudeDeg: 36.917 });
   });
 
   it('POST /api/v1/sites/compare evaluates multi-site mission requirements', async () => {
