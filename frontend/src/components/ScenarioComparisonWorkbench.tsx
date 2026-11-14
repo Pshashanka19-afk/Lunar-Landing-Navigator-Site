@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import {
   Sliders,
   Sun,
@@ -7,10 +7,11 @@ import {
   Clock,
   RefreshCw,
   Eye,
-  Layers,
+  AlertCircle,
   Zap,
 } from 'lucide-react';
-import { lunarApi, type MissionAssessmentResponse } from '../services/lunarApi';
+import { IMAGES } from '../data/images';
+import type { SiteComparisonResponse, SiteComparisonItem } from '../services/lunarApi';
 
 export interface WorkbenchSiteItem {
   id: string;
@@ -20,635 +21,458 @@ export interface WorkbenchSiteItem {
   elevationMeters: number;
 }
 
-export interface ComparisonScenario {
-  id: string;
-  name: string;
-  description: string;
-  siteId: string;
-  dateIso: string;
-  hourUtc: number;
-  durationHours: number;
-  assessment: MissionAssessmentResponse | null;
-  loading: boolean;
-  error: string | null;
-}
-
-interface ScenarioComparisonWorkbenchProps {
+export interface ScenarioComparisonWorkbenchProps {
   availableSites: WorkbenchSiteItem[];
   activeSiteId: string;
+  selectedForCompare: string[];
   activeEpochDate: string;
   activeEpochHour: number;
-  onApplyScenarioTo3D: (siteId: string, epochDate: string, epochHour: number) => void;
+  compareDurationHours: number;
+  comparisonResults: SiteComparisonResponse | null;
+  isLoading: boolean;
+  error: string | null;
+  isStale?: boolean;
+  onApplyScenarioTo3D: (siteId: string) => void;
+  onReevaluate: () => void;
 }
+
+// Helper to retrieve authentic verified project image asset
+const getSiteImage = (id: string, name?: string): string => {
+  const text = (id + ' ' + (name || '')).toLowerCase();
+  if (text.includes('malapert')) return IMAGES.malapertPeak;
+  if (text.includes('gerlache')) return IMAGES.clpsLander;
+  if (text.includes('haworth')) return IMAGES.earthRise;
+  if (text.includes('nobile')) return IMAGES.shadowRay;
+  if (text.includes('shiv') || text.includes('shakti') || text.includes('chandrayaan')) return IMAGES.clpsLander;
+  if (text.includes('mouton')) return IMAGES.psrTerminator;
+  if (text.includes('peak')) return IMAGES.malapertPeak;
+  return IMAGES.lolaDem;
+};
+
+// Fixed Skeleton Card matching exact 520px height and layout
+const ScenarioCardSkeleton: React.FC<{ isBaseline?: boolean }> = ({ isBaseline }) => (
+  <div
+    className={`bg-[#000000] border p-4 flex flex-col justify-between gap-4 relative rounded-none h-[520px] select-none ${
+      isBaseline
+        ? 'border-white/40 border-t-2 border-t-[#58D8D0] bg-white/[0.02]'
+        : 'border-white/15 bg-black/60'
+    }`}
+  >
+    <div className="flex flex-col gap-3.5">
+      {/* Header Placeholder */}
+      <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
+        <div className="h-5 w-24 bg-white/10 animate-pulse rounded-none" />
+        <div className="h-5 w-20 bg-white/10 animate-pulse rounded-none" />
+      </div>
+
+      {/* Site Thumbnail & Info Placeholder */}
+      <div className="flex items-center gap-2.5">
+        <div className="w-10 h-10 bg-white/10 animate-pulse border border-white/15 shrink-0" />
+        <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+          <div className="h-4 w-3/4 bg-white/10 animate-pulse" />
+          <div className="h-3 w-1/2 bg-white/5 animate-pulse" />
+        </div>
+      </div>
+
+      {/* Metrics Dossier Placeholder */}
+      <div className="flex flex-col gap-2 font-mono border border-white/10 bg-black/90 p-2.5">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className="flex items-center justify-between py-1 border-b border-white/5 last:border-0">
+            <div className="h-3 w-28 bg-white/10 animate-pulse" />
+            <div className="h-3 w-16 bg-white/10 animate-pulse" />
+          </div>
+        ))}
+      </div>
+
+      {/* Operational Delta Placeholder */}
+      <div className="p-2 bg-[#121418] border border-white/10 flex flex-col gap-1.5">
+        <div className="h-2.5 w-36 bg-white/10 animate-pulse" />
+        <div className="grid grid-cols-2 gap-1.5 pt-1">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-3 bg-white/5 animate-pulse" />
+          ))}
+        </div>
+      </div>
+
+      {/* Constraints Placeholder */}
+      <div className="flex flex-col gap-1 border-t border-white/10 pt-2">
+        <div className="h-2.5 w-32 bg-white/10 animate-pulse" />
+        <div className="h-3 w-full bg-white/5 animate-pulse" />
+      </div>
+    </div>
+
+    {/* Footer Placeholder */}
+    <div className="pt-3 border-t border-white/10 flex flex-col gap-2">
+      <div className="flex items-center justify-between">
+        <div className="h-3 w-16 bg-white/10 animate-pulse" />
+        <div className="h-5 w-24 bg-white/10 animate-pulse" />
+      </div>
+      <div className="h-8 w-full bg-white/10 animate-pulse" />
+    </div>
+  </div>
+);
 
 export const ScenarioComparisonWorkbench: React.FC<ScenarioComparisonWorkbenchProps> = ({
   availableSites,
   activeSiteId,
+  selectedForCompare,
   activeEpochDate,
   activeEpochHour,
+  compareDurationHours,
+  comparisonResults,
+  isLoading,
+  error,
+  isStale = false,
   onApplyScenarioTo3D,
+  onReevaluate,
 }) => {
-  // Scenario slots
-  const [scenarios, setScenarios] = useState<ComparisonScenario[]>([
-    {
-      id: 'scen-a',
-      name: 'SCENARIO A (Baseline)',
-      description: 'Primary planned landing at Shackleton Ridge',
-      siteId: activeSiteId || 'shackleton-connecting-ridge',
-      dateIso: activeEpochDate || '2026-10-14',
-      hourUtc: activeEpochHour ?? 12,
-      durationHours: 72,
-      assessment: null,
-      loading: false,
-      error: null,
-    },
-    {
-      id: 'scen-b',
-      name: 'SCENARIO B (Alternate Date)',
-      description: 'Same site 1 month later (Seasonal Solar Dip)',
-      siteId: activeSiteId || 'shackleton-connecting-ridge',
-      dateIso: '2026-11-15',
-      hourUtc: 12,
-      durationHours: 72,
-      assessment: null,
-      loading: false,
-      error: null,
-    },
-    {
-      id: 'scen-c',
-      name: 'SCENARIO C (Alternate Site)',
-      description: 'Malapert Massif on target launch epoch',
-      siteId: 'malapert-mountain',
-      dateIso: activeEpochDate || '2026-10-14',
-      hourUtc: activeEpochHour ?? 12,
-      durationHours: 72,
-      assessment: null,
-      loading: false,
-      error: null,
-    },
-  ]);
+  const activeSite = availableSites.find((s) => s.id === activeSiteId) || availableSites[0];
 
-  const [activePreset, setActivePreset] = useState<string>('seasonal');
-  const [isEvaluatingAll, setIsEvaluatingAll] = useState<boolean>(false);
-
-  // Evaluate a single scenario against backend SPICE & LOLA DEM API
-  const evaluateScenario = async (scen: ComparisonScenario): Promise<MissionAssessmentResponse> => {
-    const siteObj = availableSites.find((s) => s.id === scen.siteId) || {
-      id: scen.siteId,
-      name: 'Custom Lunar Target',
-      latitudeDeg: -89.78,
-      longitudeDeg: 125.4,
-      elevationMeters: 1413.9,
-    };
-
-    const startUtc = `${scen.dateIso}T${String(scen.hourUtc).padStart(2, '0')}:00:00Z`;
-
-    return await lunarApi.getMissionAssessment({
-      site: {
-        latitudeDeg: siteObj.latitudeDeg,
-        longitudeDeg: siteObj.longitudeDeg,
-        elevationMeters: siteObj.elevationMeters,
-      },
-      startTimeUtc: startUtc,
-      durationHours: scen.durationHours,
-      minSolarElevationDeg: 0.5,
-      minSunlightDurationHours: 24.0,
-      minEarthElevationDeg: 0.0,
-      minCommWindowHours: 12.0,
-      maxSlopeDeg: 15.0,
+  // Derive compared sites list
+  const sitesToDisplay: SiteComparisonItem[] = React.useMemo(() => {
+    if (!comparisonResults?.sites || comparisonResults.sites.length === 0) return [];
+    // Sort so that baseline active site appears first, followed by ranked sites
+    const sorted = [...comparisonResults.sites].sort((a, b) => {
+      if (a.site.id === activeSiteId) return -1;
+      if (b.site.id === activeSiteId) return 1;
+      const rankA = comparisonResults.ranking?.indexOf(a.site.id) ?? 999;
+      const rankB = comparisonResults.ranking?.indexOf(b.site.id) ?? 999;
+      return rankA - rankB;
     });
-  };
+    return sorted;
+  }, [comparisonResults, activeSiteId]);
 
-  // Evaluate all scenarios in parallel
-  const runAllEvaluations = async () => {
-    setIsEvaluatingAll(true);
-
-    const updated = [...scenarios];
-    await Promise.all(
-      updated.map(async (scen, idx) => {
-        scen.loading = true;
-        scen.error = null;
-        try {
-          const res = await evaluateScenario(scen);
-          updated[idx] = { ...scen, assessment: res, loading: false };
-        } catch (err: any) {
-          updated[idx] = { ...scen, error: err.message || 'Evaluation failed', loading: false };
-        }
-      })
-    );
-
-    setScenarios(updated);
-    setIsEvaluatingAll(false);
-  };
-
-  // Trigger evaluation on initial mount
-  useEffect(() => {
-    runAllEvaluations();
-  }, []);
-
-  // Update specific field in a scenario
-  const updateScenarioField = (
-    id: string,
-    field: 'siteId' | 'dateIso' | 'hourUtc' | 'durationHours',
-    val: any
-  ) => {
-    setScenarios((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, [field]: val, assessment: null } : s))
-    );
-  };
-
-  // Apply Quick Presets
-  const applyPreset = (presetKey: 'seasonal' | 'shootout' | 'window') => {
-    setActivePreset(presetKey);
-
-    if (presetKey === 'seasonal') {
-      // Shackleton across 3 months
-      setScenarios([
-        {
-          id: 'scen-a',
-          name: 'SCENARIO A (Oct 2026)',
-          description: 'Shackleton Ridge (Spring Solar Elevation: ~1.5°)',
-          siteId: 'shackleton-connecting-ridge',
-          dateIso: '2026-10-14',
-          hourUtc: 12,
-          durationHours: 72,
-          assessment: null,
-          loading: false,
-          error: null,
-        },
-        {
-          id: 'scen-b',
-          name: 'SCENARIO B (Nov 2026)',
-          description: 'Shackleton Ridge (Approaching Summer Solstice)',
-          siteId: 'shackleton-connecting-ridge',
-          dateIso: '2026-11-15',
-          hourUtc: 12,
-          durationHours: 72,
-          assessment: null,
-          loading: false,
-          error: null,
-        },
-        {
-          id: 'scen-c',
-          name: 'SCENARIO C (Dec 2026)',
-          description: 'Shackleton Ridge (Summer Solstice Peak: ~1.54°)',
-          siteId: 'shackleton-connecting-ridge',
-          dateIso: '2026-12-21',
-          hourUtc: 12,
-          durationHours: 72,
-          assessment: null,
-          loading: false,
-          error: null,
-        },
-      ]);
-    } else if (presetKey === 'shootout') {
-      // 3 Top Artemis Sites on Oct 14
-      setScenarios([
-        {
-          id: 'scen-a',
-          name: 'SCENARIO A (Shackleton)',
-          description: '89.78°S — Continuous illumination peak',
-          siteId: 'shackleton-connecting-ridge',
-          dateIso: '2026-10-14',
-          hourUtc: 12,
-          durationHours: 72,
-          assessment: null,
-          loading: false,
-          error: null,
-        },
-        {
-          id: 'scen-b',
-          name: 'SCENARIO B (Malapert Massif)',
-          description: '86.04°S — Uninterrupted Direct-to-Earth Comm',
-          siteId: 'malapert-mountain',
-          dateIso: '2026-10-14',
-          hourUtc: 12,
-          durationHours: 72,
-          assessment: null,
-          loading: false,
-          error: null,
-        },
-        {
-          id: 'scen-c',
-          name: 'SCENARIO C (de Gerlache Rim)',
-          description: '88.71°S — High elevated rim plateau',
-          siteId: 'de-gerlache-rim-2',
-          dateIso: '2026-10-14',
-          hourUtc: 12,
-          durationHours: 72,
-          assessment: null,
-          loading: false,
-          error: null,
-        },
-      ]);
-    } else if (presetKey === 'window') {
-      // Launch window week by week at Malapert
-      setScenarios([
-        {
-          id: 'scen-a',
-          name: 'SCENARIO A (Oct 14)',
-          description: 'Opening of launch window at Malapert Massif',
-          siteId: 'malapert-mountain',
-          dateIso: '2026-10-14',
-          hourUtc: 12,
-          durationHours: 72,
-          assessment: null,
-          loading: false,
-          error: null,
-        },
-        {
-          id: 'scen-b',
-          name: 'SCENARIO B (Oct 21)',
-          description: 'Mid-window launch (+7 days)',
-          siteId: 'malapert-mountain',
-          dateIso: '2026-10-21',
-          hourUtc: 12,
-          durationHours: 72,
-          assessment: null,
-          loading: false,
-          error: null,
-        },
-        {
-          id: 'scen-c',
-          name: 'SCENARIO C (Oct 28)',
-          description: 'Closing of launch window (+14 days)',
-          siteId: 'malapert-mountain',
-          dateIso: '2026-10-28',
-          hourUtc: 12,
-          durationHours: 72,
-          assessment: null,
-          loading: false,
-          error: null,
-        },
-      ]);
-    }
-  };
-
-  // Baseline scenario for delta calculations
-  const baseline = scenarios[0]?.assessment;
+  // Baseline site metrics for delta calculations
+  const baselineItem = React.useMemo(() => {
+    if (!comparisonResults?.sites) return null;
+    return comparisonResults.sites.find((s) => s.site.id === activeSiteId) || comparisonResults.sites[0] || null;
+  }, [comparisonResults, activeSiteId]);
 
   return (
-    <div className="w-full bg-[#08090C] border border-white/15 p-4 sm:p-6 flex flex-col gap-6 rounded-none">
-      {/* Workbench Header & Preset Switchers */}
+    <div className="w-full bg-[#08090C] border border-white/15 p-4 sm:p-6 flex flex-col gap-5 rounded-none shadow-xl">
+      {/* Header & Shared Mission Parameters Badge Bar */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-white/10 pb-4">
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1.5">
           <div className="flex items-center gap-2">
-            <Sliders size={14} className="text-white" />
+            <Sliders size={14} className="text-[#58D8D0]" />
             <span className="font-mono text-xs uppercase tracking-[0.2em] font-bold text-white">
               04 // RAPID MISSION SCENARIO COMPARISON WORKBENCH
             </span>
+            {isStale && (
+              <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] font-mono font-bold tracking-wider animate-pulse">
+                PARAMETERS CHANGED
+              </span>
+            )}
           </div>
-          <p className="font-mono text-[11px] text-white/50 max-w-3xl">
-            Simultaneously evaluate and compare multiple lunar landing locations and observation epochs.
-            Analyze how changing the landing date or coordinates impacts solar power duration, direct Earth communication line-of-sight, and terrain slope safety.
+          <p className="font-mono text-[11px] text-white/50 max-w-3xl leading-relaxed">
+            Comparing candidate lunar landing zones using current mission parameters. Real-time solar illumination, direct Earth line-of-sight communication, and LOLA altimetry evaluated via NASA SPICE DE440 ephemerides.
           </p>
         </div>
 
-        {/* Action Controls */}
+        {/* Action Controls & Re-evaluate Button */}
         <div className="flex flex-wrap items-center gap-2 font-mono text-xs">
           <button
             type="button"
-            onClick={runAllEvaluations}
-            disabled={isEvaluatingAll}
-            className="px-4 py-2 bg-white text-black hover:bg-slate-200 font-bold uppercase tracking-wider flex items-center gap-2 cursor-pointer transition-colors rounded-none disabled:opacity-50"
+            onClick={onReevaluate}
+            disabled={isLoading}
+            className="px-4 py-2 bg-white text-black hover:bg-slate-200 font-bold uppercase tracking-wider flex items-center gap-2 cursor-pointer transition-colors rounded-none disabled:opacity-50 shadow-md"
+            title="Recalculate trade-off comparison using current parameters"
           >
-            <RefreshCw size={12} className={isEvaluatingAll ? 'animate-spin' : ''} />
-            <span>{isEvaluatingAll ? 'EVALUATING...' : 'RE-EVALUATE SCENARIOS'}</span>
+            <RefreshCw size={12} className={isLoading ? 'animate-spin' : ''} />
+            <span>{isLoading ? 'EVALUATING SPICE DE440...' : 'RE-EVALUATE SCENARIOS'}</span>
           </button>
         </div>
       </div>
 
-      {/* Preset Scenario Selector Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-[#101216] border border-white/10 font-mono text-xs">
-        <div className="flex items-center gap-2">
-          <Layers size={13} className="text-white/40" />
-          <span className="text-white/60 uppercase text-[10px] font-bold">RAPID PRESETS:</span>
+      {/* Shared Mission Parameter Readout Bar (No Duplicate Inputs) */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-3 bg-[#101216] border border-white/10 font-mono text-xs">
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[9.5px] text-white/40 uppercase font-bold">ACTIVE BASELINE:</span>
+          <span className="text-white font-bold text-[11.5px] truncate text-[#58D8D0]">
+            {activeSite?.name || 'Baseline Site'}
+          </span>
         </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => applyPreset('seasonal')}
-            className={`px-3 py-1 text-[10px] uppercase font-bold tracking-wider border transition-all cursor-pointer rounded-none ${
-              activePreset === 'seasonal'
-                ? 'bg-white text-black border-white'
-                : 'bg-black/60 text-white/70 hover:text-white border-white/20 hover:bg-white/10'
-            }`}
-          >
-            Seasonal Variation (Shackleton Oct vs Nov vs Dec)
-          </button>
-
-          <button
-            type="button"
-            onClick={() => applyPreset('shootout')}
-            className={`px-3 py-1 text-[10px] uppercase font-bold tracking-wider border transition-all cursor-pointer rounded-none ${
-              activePreset === 'shootout'
-                ? 'bg-white text-black border-white'
-                : 'bg-black/60 text-white/70 hover:text-white border-white/20 hover:bg-white/10'
-            }`}
-          >
-            Candidate Site Shootout (Shackleton vs Malapert vs de Gerlache)
-          </button>
-
-          <button
-            type="button"
-            onClick={() => applyPreset('window')}
-            className={`px-3 py-1 text-[10px] uppercase font-bold tracking-wider border transition-all cursor-pointer rounded-none ${
-              activePreset === 'window'
-                ? 'bg-white text-black border-white'
-                : 'bg-black/60 text-white/70 hover:text-white border-white/20 hover:bg-white/10'
-            }`}
-          >
-            Launch Window Sensitivity (+0d vs +7d vs +14d)
-          </button>
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[9.5px] text-white/40 uppercase font-bold">OBSERVATION EPOCH:</span>
+          <span className="text-white font-bold text-[11.5px] tabular-nums">
+            {activeEpochDate} {String(activeEpochHour).padStart(2, '0')}:00 UTC
+          </span>
+        </div>
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[9.5px] text-white/40 uppercase font-bold">MISSION WINDOW:</span>
+          <span className="text-[#ECC068] font-bold text-[11.5px] tabular-nums">
+            {compareDurationHours} Hours ({comparisonResults?.interval ? `${comparisonResults.interval.durationHours}h sync` : 'Nominal'})
+          </span>
+        </div>
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[9.5px] text-white/40 uppercase font-bold">STAGED SITES:</span>
+          <span className="text-white/80 font-bold text-[11.5px]">
+            {sitesToDisplay.length > 0 ? `${sitesToDisplay.length} CANDIDATES` : `${selectedForCompare.length} STAGED`}
+          </span>
         </div>
       </div>
 
-      {/* Side-by-Side 3-Scenario Cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {scenarios.map((scen, idx) => {
-          const siteObj = availableSites.find((s) => s.id === scen.siteId);
-          const assessment = scen.assessment;
-          const isBaseline = idx === 0;
+      {/* Error Banner */}
+      {error && (
+        <div className="p-3 bg-red-950/70 border border-red-500/40 text-red-200 font-mono text-xs flex items-center gap-2.5 rounded-none">
+          <AlertCircle size={15} className="text-red-400 shrink-0" />
+          <span className="flex-1">{error}</span>
+          <button
+            type="button"
+            onClick={onReevaluate}
+            className="px-2.5 py-1 bg-red-500/20 hover:bg-red-500/30 text-white font-bold uppercase text-[10px] border border-red-400/40 cursor-pointer"
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
-          // Status colors
-          const status = assessment?.finalAssessment.status ?? 'EVALUATING';
-          const isFeasible = status === 'FEASIBLE';
-          const isMarginal = status === 'MARGINAL';
-
-          return (
-            <div
-              key={scen.id}
-              className={`bg-black border p-4 flex flex-col justify-between gap-4 relative transition-all rounded-none ${
-                isBaseline
-                  ? 'border-white/50 border-t-2 border-t-[#58D8D0]'
-                  : 'border-white/20 hover:border-white/40'
-              }`}
+      {/* Side-by-Side Scenario Cards Grid (Fixed Dimensions, Zero Layout Shift) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        {isLoading || !comparisonResults ? (
+          // Fixed Skeleton Layout: Exactly 3 identical cards
+          <>
+            <ScenarioCardSkeleton isBaseline={true} />
+            <ScenarioCardSkeleton isBaseline={false} />
+            <ScenarioCardSkeleton isBaseline={false} />
+          </>
+        ) : sitesToDisplay.length === 0 ? (
+          <div className="col-span-full p-8 bg-black/60 border border-white/10 text-center font-mono text-xs text-white/50 flex flex-col items-center justify-center gap-3">
+            <span>No comparison data returned for selected mission parameters.</span>
+            <button
+              type="button"
+              onClick={onReevaluate}
+              className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white font-bold uppercase text-xs border border-white/30 cursor-pointer"
             >
-              <div className="flex flex-col gap-3.5">
-                {/* Header & Tag */}
-                <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
-                  <span className={`px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider border rounded-none ${
-                    isBaseline ? 'bg-white text-black border-white' : 'bg-white/10 text-white/80 border-white/20'
-                  }`}>
-                    {scen.name}
-                  </span>
+              Run Evaluation
+            </button>
+          </div>
+        ) : (
+          sitesToDisplay.map((item) => {
+            const isBaseline = item.site.id === activeSiteId;
+            const rankIndex = comparisonResults.ranking?.indexOf(item.site.id) ?? -1;
+            const isBestRank = rankIndex === 0;
 
-                  <span className="font-mono text-xs font-bold text-white tabular-nums">
-                    SCORE: {assessment ? `${assessment.finalAssessment.score}/100` : '—'}
-                  </span>
-                </div>
+            // Operational status
+            const isPassed = item.overallStatus === 'ALL_PASSED';
+            const statusLabel = isPassed ? 'CONSTRAINTS MET' : 'MARGINAL';
 
-                {/* Scenario Description */}
-                <p className="font-mono text-[10px] text-white/50 leading-relaxed min-h-[28px]">
-                  {scen.description}
-                </p>
+            return (
+              <div
+                key={item.site.id}
+                className={`bg-black border p-4 flex flex-col justify-between gap-4 relative transition-all rounded-none h-[520px] ${
+                  isBaseline
+                    ? 'border-white/50 border-t-2 border-t-[#58D8D0] bg-white/[0.03]'
+                    : isBestRank
+                    ? 'border-white/40 bg-white/[0.015]'
+                    : 'border-white/20 hover:border-white/35'
+                }`}
+              >
+                {/* Corner reticle for active baseline */}
+                {isBaseline && (
+                  <div className="absolute top-0 right-0 w-2.5 h-2.5 border-t border-r border-[#58D8D0]" />
+                )}
 
-                {/* Scenario Config Controls */}
-                <div className="bg-[#101216] border border-white/10 p-2.5 flex flex-col gap-2 font-mono text-[10.5px]">
-                  {/* Site Selector */}
-                  <div className="flex flex-col gap-0.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[9px] text-white/40 uppercase font-bold">TARGET SITE:</span>
-                      {siteObj && (
-                        <span className="text-[9px] text-white/40 tabular-nums">
-                          {Math.abs(siteObj.latitudeDeg).toFixed(2)}°S, {siteObj.longitudeDeg.toFixed(2)}°E
+                <div className="flex flex-col gap-3">
+                  {/* Card Header: Rank, Active Badge, Score */}
+                  <div className="flex items-center justify-between border-b border-white/10 pb-2">
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider border rounded-none ${
+                        isBaseline
+                          ? 'bg-[#58D8D0]/20 text-[#58D8D0] border-[#58D8D0]/40 font-extrabold'
+                          : isBestRank
+                          ? 'bg-white text-black border-white font-extrabold'
+                          : 'bg-white/10 text-white/80 border-white/20'
+                      }`}>
+                        {isBaseline ? 'BASELINE' : rankIndex >= 0 ? `RANK #${rankIndex + 1}` : 'EVALUATED'}
+                      </span>
+                      {isBaseline && (
+                        <span className="font-mono text-[8.5px] uppercase tracking-wider text-[#58D8D0] font-bold">
+                          ACTIVE TARGET
                         </span>
                       )}
                     </div>
-                    <select
-                      value={scen.siteId}
-                      onChange={(e) => updateScenarioField(scen.id, 'siteId', e.target.value)}
-                      className="bg-black border border-white/20 text-white p-1 text-[10.5px] outline-none cursor-pointer"
-                    >
-                      {availableSites.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name} ({Math.abs(s.latitudeDeg).toFixed(1)}°S)
-                        </option>
-                      ))}
-                    </select>
+
+                    <span className="font-mono text-xs font-bold text-white tabular-nums">
+                      SCORE: {item.score !== undefined ? `${item.score.toFixed(1)}/100` : '—'}
+                    </span>
                   </div>
 
-                  {/* Date & Time Picker */}
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-[9px] text-white/40 uppercase font-bold">EPOCH DATE:</span>
-                      <input
-                        type="date"
-                        value={scen.dateIso}
-                        onChange={(e) => updateScenarioField(scen.id, 'dateIso', e.target.value)}
-                        className="bg-black border border-white/20 text-white p-1 text-[10.5px] outline-none cursor-pointer"
-                      />
-                    </div>
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-[9px] text-white/40 uppercase font-bold">HOUR (UTC):</span>
-                      <select
-                        value={scen.hourUtc}
-                        onChange={(e) => updateScenarioField(scen.id, 'hourUtc', parseInt(e.target.value))}
-                        className="bg-black border border-white/20 text-white p-1 text-[10.5px] outline-none cursor-pointer"
-                      >
-                        {Array.from({ length: 24 }, (_, h) => (
-                          <option key={h} value={h}>
-                            {String(h).padStart(2, '0')}:00 UTC
-                          </option>
-                        ))}
-                      </select>
+                  {/* Site Header: Image, Name, Coordinates */}
+                  <div className="flex items-center gap-2.5">
+                    <img
+                      src={getSiteImage(item.site.id, item.site.name)}
+                      alt={item.site.name}
+                      className="w-10 h-10 object-cover border border-white/20 shrink-0 bg-black rounded-none"
+                    />
+                    <div className="flex flex-col min-w-0">
+                      <h4 className="font-bold text-xs text-white truncate font-mono uppercase tracking-wider">
+                        {item.site.name}
+                      </h4>
+                      <span className="text-[10px] font-mono text-white/50 tabular-nums">
+                        {Math.abs(item.site.latitudeDeg).toFixed(2)}°S, {item.site.longitudeDeg >= 0 ? `${item.site.longitudeDeg.toFixed(2)}°E` : `${Math.abs(item.site.longitudeDeg).toFixed(2)}°W`} • DATUM {item.site.elevationMeters > 0 ? `+${item.site.elevationMeters.toFixed(0)}m` : `${item.site.elevationMeters.toFixed(0)}m`}
+                      </span>
                     </div>
                   </div>
 
-                  {/* Duration Selector */}
-                  <div className="flex items-center justify-between pt-1 border-t border-white/5">
-                    <span className="text-[9px] text-white/40 uppercase font-bold">WINDOW:</span>
-                    <div className="flex gap-1">
-                      {[24, 48, 72].map((dur) => (
-                        <button
-                          key={dur}
-                          type="button"
-                          onClick={() => updateScenarioField(scen.id, 'durationHours', dur)}
-                          className={`px-1.5 py-0.5 text-[9px] font-bold border rounded-none cursor-pointer ${
-                            scen.durationHours === dur
-                              ? 'bg-white text-black border-white'
-                              : 'bg-black text-white/50 border-white/20'
-                          }`}
-                        >
-                          {dur}H
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Scenario Metrics Dossier */}
-                {assessment ? (
+                  {/* Metrics Dossier (Fixed row heights) */}
                   <div className="flex flex-col gap-1.5 font-mono text-[10.5px] border border-white/10 bg-black/90 p-2.5">
                     {/* Solar Sunlight */}
                     <div className="flex items-center justify-between py-1 border-b border-white/5">
                       <span className="text-white/60 flex items-center gap-1.5">
                         <Sun size={11} className="text-[#ECC068]" /> Total Sunlight:
                       </span>
-                      <div className="flex items-center gap-1.5 font-bold tabular-nums">
-                        <span className="text-white">{assessment.powerAssessment.sunlightTotalHours.toFixed(1)} hrs</span>
-                        <span className="text-white/40 text-[9.5px]">({assessment.powerAssessment.sunlightPercentage.toFixed(0)}%)</span>
-                      </div>
+                      <span className="text-white font-bold tabular-nums">
+                        {item.metrics.sunlightTotalHours.toFixed(1)} hrs
+                      </span>
                     </div>
 
-                    {/* Continuous Streak */}
+                    {/* Continuous Sun Streak */}
                     <div className="flex items-center justify-between py-1 border-b border-white/5">
                       <span className="text-white/60 flex items-center gap-1.5">
                         <Clock size={11} className="text-amber-300" /> Max Sun Streak:
                       </span>
                       <span className="text-amber-300 font-bold tabular-nums">
-                        {assessment.powerAssessment.longestContinuousSunlightHours.toFixed(1)} hrs
+                        {item.metrics.longestSunlightContinuousHours.toFixed(1)} hrs unbroken
                       </span>
                     </div>
 
-                    {/* Direct-to-Earth Comm */}
+                    {/* Direct Earth LOS */}
                     <div className="flex items-center justify-between py-1 border-b border-white/5">
                       <span className="text-white/60 flex items-center gap-1.5">
                         <Globe size={11} className="text-[#58D8D0]" /> Direct Earth LOS:
                       </span>
-                      <div className="flex items-center gap-1.5 font-bold tabular-nums">
-                        <span className="text-[#58D8D0]">
-                          {assessment.communicationAssessment.earthVisibilityTotalHours.toFixed(1)} hrs
-                        </span>
-                        <span className="text-white/40 text-[9.5px]">
-                          ({assessment.communicationAssessment.earthVisibilityPercentage.toFixed(0)}%)
-                        </span>
-                      </div>
+                      <span className="text-[#58D8D0] font-bold tabular-nums">
+                        {item.metrics.earthVisibilityTotalHours.toFixed(1)} hrs
+                      </span>
                     </div>
 
-                    {/* Max Solar Elevation */}
+                    {/* Simultaneous Both Visible */}
                     <div className="flex items-center justify-between py-1 border-b border-white/5">
                       <span className="text-white/60 flex items-center gap-1.5">
-                        <Zap size={11} className="text-[#ECC068]" /> Max Solar Angle:
+                        <Zap size={11} className="text-emerald-400" /> Simultaneous Op:
                       </span>
-                      <span className="text-white font-bold tabular-nums">
-                        {assessment.powerAssessment.maxSolarElevationDeg > 0 ? '+' : ''}{assessment.powerAssessment.maxSolarElevationDeg.toFixed(2)}°
+                      <span className="text-emerald-400 font-bold tabular-nums">
+                        {item.metrics.bothVisibilityTotalHours.toFixed(1)} hrs
                       </span>
                     </div>
 
                     {/* Topographic Slope */}
                     <div className="flex items-center justify-between py-1">
                       <span className="text-white/60 flex items-center gap-1.5">
-                        <Mountain size={11} className="text-emerald-400" /> LOLA Slope:
+                        <Mountain size={11} className="text-emerald-400" /> LOLA 80M Slope:
                       </span>
-                      <span className={`font-bold tabular-nums ${assessment.terrainParameters.slopeDeg <= 12 ? 'text-emerald-400' : 'text-amber-400'}`}>
-                        {assessment.terrainParameters.slopeDeg.toFixed(1)}°
+                      <span className={`font-bold tabular-nums ${item.metrics.slopeDeg <= 12 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                        {item.metrics.slopeDeg.toFixed(1)}° {item.metrics.slopeDeg <= 8 ? '(Safe)' : item.metrics.slopeDeg <= 12 ? '(Moderate)' : '(Steep)'}
                       </span>
                     </div>
                   </div>
-                ) : (
-                  <div className="p-4 bg-black/60 border border-white/10 text-center font-mono text-xs text-white/40 flex items-center justify-center gap-2">
-                    <RefreshCw size={12} className={scen.loading ? 'animate-spin text-white' : ''} />
-                    <span>{scen.loading ? 'Computing SPICE & LOLA DEM...' : 'Awaiting evaluation'}</span>
-                  </div>
-                )}
 
-                {/* Delta Matrix vs Scenario A */}
-                {!isBaseline && assessment && baseline && (
-                  <div className="p-2 bg-[#121418] border border-white/10 flex flex-col gap-1 font-mono text-[10px]">
+                  {/* Operational Delta vs Baseline */}
+                  <div className="p-2 bg-[#121418] border border-white/10 flex flex-col gap-1 font-mono text-[10px] min-h-[56px] justify-center">
                     <span className="text-white/40 uppercase font-bold text-[8.5px] tracking-wider">
-                      OPERATIONAL DELTA VS SCENARIO A:
+                      {isBaseline ? 'PRIMARY OPERATIONAL REFERENCE:' : 'OPERATIONAL DELTA VS BASELINE:'}
                     </span>
-                    <div className="grid grid-cols-2 gap-1 text-[9.5px]">
-                      {/* Sun Delta */}
-                      {(() => {
-                        const delta = assessment.powerAssessment.sunlightTotalHours - baseline.powerAssessment.sunlightTotalHours;
-                        return (
-                          <div className="flex justify-between">
-                            <span className="text-white/50">Sunlight:</span>
-                            <span className={`font-bold tabular-nums ${delta >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                              {delta >= 0 ? `+${delta.toFixed(1)}h` : `${delta.toFixed(1)}h`}
-                            </span>
-                          </div>
-                        );
-                      })()}
+                    {isBaseline ? (
+                      <span className="text-white/60 text-[9.5px]">
+                        Primary reference candidate site against which alternative scenarios are evaluated.
+                      </span>
+                    ) : baselineItem ? (
+                      <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[9.5px]">
+                        {/* Sunlight Delta */}
+                        {(() => {
+                          const delta = item.metrics.sunlightTotalHours - baselineItem.metrics.sunlightTotalHours;
+                          return (
+                            <div className="flex justify-between">
+                              <span className="text-white/50">Sunlight:</span>
+                              <span className={`font-bold tabular-nums ${delta >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                {delta >= 0 ? `+${delta.toFixed(1)}h` : `${delta.toFixed(1)}h`}
+                              </span>
+                            </div>
+                          );
+                        })()}
 
-                      {/* Comm Delta */}
-                      {(() => {
-                        const delta = assessment.communicationAssessment.earthVisibilityTotalHours - baseline.communicationAssessment.earthVisibilityTotalHours;
-                        return (
-                          <div className="flex justify-between">
-                            <span className="text-white/50">Earth LOS:</span>
-                            <span className={`font-bold tabular-nums ${delta >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                              {delta >= 0 ? `+${delta.toFixed(1)}h` : `${delta.toFixed(1)}h`}
-                            </span>
-                          </div>
-                        );
-                      })()}
+                        {/* Earth LOS Delta */}
+                        {(() => {
+                          const delta = item.metrics.earthVisibilityTotalHours - baselineItem.metrics.earthVisibilityTotalHours;
+                          return (
+                            <div className="flex justify-between">
+                              <span className="text-white/50">Earth LOS:</span>
+                              <span className={`font-bold tabular-nums ${delta >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                {delta >= 0 ? `+${delta.toFixed(1)}h` : `${delta.toFixed(1)}h`}
+                              </span>
+                            </div>
+                          );
+                        })()}
 
-                      {/* Score Delta */}
-                      {(() => {
-                        const delta = assessment.finalAssessment.score - baseline.finalAssessment.score;
-                        return (
-                          <div className="flex justify-between">
-                            <span className="text-white/50">Score:</span>
-                            <span className={`font-bold tabular-nums ${delta >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                              {delta >= 0 ? `+${delta.toFixed(0)} pts` : `${delta.toFixed(0)} pts`}
-                            </span>
-                          </div>
-                        );
-                      })()}
+                        {/* Score Delta */}
+                        {(() => {
+                          const delta = (item.score ?? 0) - (baselineItem.score ?? 0);
+                          return (
+                            <div className="flex justify-between">
+                              <span className="text-white/50">Score:</span>
+                              <span className={`font-bold tabular-nums ${delta >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                {delta >= 0 ? `+${delta.toFixed(1)}` : `${delta.toFixed(1)}`}
+                              </span>
+                            </div>
+                          );
+                        })()}
 
-                      {/* Slope Delta */}
-                      {(() => {
-                        const delta = assessment.terrainParameters.slopeDeg - baseline.terrainParameters.slopeDeg;
-                        return (
-                          <div className="flex justify-between">
-                            <span className="text-white/50">Slope:</span>
-                            <span className={`font-bold tabular-nums ${delta <= 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
-                              {delta <= 0 ? `${delta.toFixed(1)}°` : `+${delta.toFixed(1)}°`}
-                            </span>
-                          </div>
-                        );
-                      })()}
+                        {/* Slope Delta */}
+                        {(() => {
+                          const delta = item.metrics.slopeDeg - baselineItem.metrics.slopeDeg;
+                          return (
+                            <div className="flex justify-between">
+                              <span className="text-white/50">Slope:</span>
+                              <span className={`font-bold tabular-nums ${delta <= 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                                {delta <= 0 ? `${delta.toFixed(1)}°` : `+${delta.toFixed(1)}°`}
+                              </span>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {/* Limiting Constraints from Real Backend */}
+                  {item.reasons && item.reasons.length > 0 && (
+                    <div className="flex flex-col gap-0.5 border-t border-white/10 pt-1.5 font-mono text-[9px] text-white/60 truncate">
+                      <span className="text-white/40 uppercase font-bold text-[8px]">ANALYSIS RATIONALE:</span>
+                      <span className="truncate text-white/70">{item.reasons[0]}</span>
                     </div>
-                  </div>
-                )}
-
-                {/* Scientific Reasons from Backend */}
-                {assessment && assessment.finalAssessment.reasons.length > 0 && (
-                  <div className="flex flex-col gap-1 border-t border-white/10 pt-2 font-mono text-[9.5px]">
-                    <span className="text-white/40 uppercase font-bold text-[8.5px]">LIMITING CONSTRAINTS:</span>
-                    <ul className="flex flex-col gap-1 text-white/70">
-                      {assessment.finalAssessment.reasons.slice(0, 3).map((r, rIdx) => (
-                        <li key={rIdx} className="flex items-start gap-1 leading-tight">
-                          <span className="text-white/30">•</span>
-                          <span>{r}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-
-              {/* Card Footer: Status & 3D Load Button */}
-              <div className="pt-3 border-t border-white/10 flex flex-col gap-2">
-                <div className="flex items-center justify-between text-[10px] font-mono">
-                  <span className="text-white/40 uppercase">VERDICT:</span>
-                  <span className={`px-2 py-0.5 font-bold uppercase tracking-wider border rounded-none ${
-                    isFeasible
-                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40'
-                      : isMarginal
-                      ? 'bg-amber-500/20 text-amber-300 border-amber-400/40'
-                      : 'bg-rose-500/20 text-rose-300 border-rose-400/40'
-                  }`}>
-                    {status}
-                  </span>
+                  )}
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => onApplyScenarioTo3D(scen.siteId, scen.dateIso, scen.hourUtc)}
-                  className="w-full py-2 bg-white/10 hover:bg-white text-white hover:text-black border border-white/20 font-mono text-[10.5px] font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer rounded-none"
-                >
-                  <Eye size={12} />
-                  <span>LOAD INTO 3D SIMULATOR</span>
-                </button>
+                {/* Card Footer: Status & 3D Load Button */}
+                <div className="pt-2.5 border-t border-white/10 flex flex-col gap-2">
+                  <div className="flex items-center justify-between text-[10px] font-mono">
+                    <span className="text-white/40 uppercase">STATUS:</span>
+                    <span className={`px-2 py-0.5 font-bold uppercase tracking-wider border rounded-none ${
+                      isPassed
+                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40'
+                        : 'bg-amber-500/20 text-amber-300 border-amber-400/40'
+                    }`}>
+                      {statusLabel}
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => onApplyScenarioTo3D(item.site.id)}
+                    className={`w-full py-2 border font-mono text-[10.5px] font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer rounded-none ${
+                      isBaseline
+                        ? 'bg-[#58D8D0]/15 text-[#58D8D0] border-[#58D8D0]/40 hover:bg-[#58D8D0] hover:text-black'
+                        : 'bg-white/10 hover:bg-white text-white hover:text-black border-white/20'
+                    }`}
+                  >
+                    <Eye size={12} />
+                    <span>{isBaseline ? 'FOCUS ON ACTIVE GLOBE' : 'LOAD INTO 3D SIMULATOR'}</span>
+                  </button>
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })
+        )}
       </div>
     </div>
   );

@@ -102,4 +102,49 @@ describe('Sites API integration tests', () => {
     expect(res.body.data.ranking.length).toBe(2);
     expect(res.body.data.disclaimer).toContain('decision-support');
   });
+
+  it('GET /api/v1/sites/:id returns site details for valid site ID', async () => {
+    const res = await request(app).get('/api/v1/sites/shackleton-connecting-ridge');
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.id).toBe('shackleton-connecting-ridge');
+    expect(res.body.data.latitudeDeg).toBeCloseTo(-89.78, 2);
+    expect(res.body.data.name).toContain('Shackleton');
+  });
+
+  it('GET /api/v1/sites/:id returns 404 for unknown site ID', async () => {
+    const res = await request(app).get('/api/v1/sites/non-existent-site-xyz');
+    expect(res.status).toBe(404);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error.code).toBe('SITE_NOT_FOUND');
+  });
+
+  it('POST /api/v1/sites/analysis computes authoritative SPICE DE440 & LOLA analysis', async () => {
+    const res = await request(app)
+      .post('/api/v1/sites/analysis')
+      .send({
+        site: {
+          id: 'shackleton-connecting-ridge',
+          name: 'Shackleton Crater - Connecting Ridge',
+          latitudeDeg: -89.78,
+          longitudeDeg: 125.40,
+          elevationMeters: 1413.9,
+        },
+        epochUtc: '2026-10-14T12:00:00Z',
+        observerHeightMeters: 2.0,
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.site.name).toContain('Shackleton');
+    expect(res.body.data.terrain).toBeDefined();
+    expect(res.body.data.terrain.slopeDeg).toBeDefined();
+    expect(res.body.data.sun).toBeDefined();
+    expect(res.body.data.sun.elevationDeg).toBeDefined();
+    expect(res.body.data.sun.azimuthDeg).toBeDefined();
+    expect(res.body.data.earth).toBeDefined();
+    expect(res.body.data.earth.elevationDeg).toBeDefined();
+    expect(res.body.data.next24HoursSummary).toBeDefined();
+    expect(res.body.data.metadata.ephemerisProvider).toBeDefined();
+  });
 });
