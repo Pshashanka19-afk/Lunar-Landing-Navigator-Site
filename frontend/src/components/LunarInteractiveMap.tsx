@@ -4,14 +4,14 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import gsap from 'gsap';
 import * as Cesium from 'cesium';
 import 'cesium/Build/Cesium/Widgets/widgets.css';
-import { 
-  RotateCcw, 
-  Play, 
-  Pause, 
-  Radio, 
-  Clock, 
-  Sliders, 
-  RefreshCw, 
+import {
+  RotateCcw,
+  Play,
+  Pause,
+  Radio,
+  Clock,
+  Sliders,
+  RefreshCw,
   AlertTriangle,
   Calendar,
   ChevronUp,
@@ -41,11 +41,11 @@ export interface MapSiteItem {
 
 // Retained type exports for backward compatibility across other components
 export type CelestialViewMode = 'SOLAR_SYSTEM' | 'EARTH_MOON' | 'LUNAR_MISSION';
-export type DatasetLayerType = 
-  | 'MOON_TREK_WAC' 
-  | 'MOON_TREK_LOLA' 
-  | 'MOON_TREK_RELIEF' 
-  | 'LROC_IMAGERY' 
+export type DatasetLayerType =
+  | 'MOON_TREK_WAC'
+  | 'MOON_TREK_LOLA'
+  | 'MOON_TREK_RELIEF'
+  | 'LROC_IMAGERY'
   | 'ELEVATION';
 export type ObservationMode = 'OBSERVER_SURFACE' | 'OBSERVER_SPACE';
 export type VisualizationScaleMode = 'EXPLORATION' | 'SCIENTIFIC_GEOMETRY';
@@ -99,6 +99,30 @@ export const VISUAL_SCALE_MOON_ORBIT_R = 14.5;             // Scaled Moon orbit 
 // High-Resolution South Pole LOLA Boundary
 export const SOUTH_POLE_HIGHRES_LAT_CUTOFF = -83.0;
 
+// Prominent Lunar Landmarks for Selenographic Reference
+export interface LunarLandmark {
+  name: string;
+  lat: number;
+  lon: number;
+  region: string;
+  type?: 'mare' | 'crater' | 'pole' | 'basin';
+}
+
+export const GLOBAL_LUNAR_LANDMARKS: LunarLandmark[] = [
+  { name: 'APOLLO 11', lat: 0.67, lon: 23.47, region: 'Mare Tranquillitatis', type: 'crater' },
+  { name: 'MARE TRANQUILLITATIS', lat: 8.5, lon: 31.4, region: 'Near Side Basalt Patch', type: 'mare' },
+  { name: 'MARE SERENITATIS', lat: 28.0, lon: 17.5, region: 'Near Side Basalt Patch', type: 'mare' },
+  { name: 'MARE IMBRIUM', lat: 35.0, lon: -16.0, region: 'Near Side Giant Basin', type: 'mare' },
+  { name: 'OCEANUS PROCELLARUM', lat: 18.4, lon: -57.4, region: 'Near Side Ocean of Storms', type: 'mare' },
+  { name: 'MARE CRISIUM', lat: 17.0, lon: 59.1, region: 'Isolated Circular Mare', type: 'mare' },
+  { name: 'COPERNICUS', lat: 9.62, lon: -20.08, region: 'Terraced Crater Patch', type: 'crater' },
+  { name: 'TYCHO', lat: -43.3, lon: -11.2, region: 'Highland Ray System', type: 'crater' },
+  { name: 'ARISTARCHUS', lat: 23.7, lon: -47.4, region: 'Brightest Albedo Patch', type: 'crater' },
+  { name: 'PLATO', lat: 51.6, lon: -9.3, region: 'Dark Flat Floor Crater', type: 'crater' },
+  { name: 'SOUTH POLE-AITKEN BASIN', lat: -53.0, lon: 180.0, region: 'Far Side Giant Basin', type: 'basin' },
+  { name: 'SHACKLETON CRATER', lat: -89.78, lon: 125.40, region: 'South Pole Artemis Zone', type: 'crater' },
+  { name: 'MALAPERT MASSIF', lat: -86.04, lon: 2.70, region: 'Peak of Eternal Light', type: 'crater' },
+];
 
 export const formatSiteShortName = (name: string): string => {
   if (!name) return '';
@@ -123,7 +147,7 @@ export const formatSiteShortName = (name: string): string => {
  * on the Moon sphere (Moon local coordinate frame).
  * Lat -90 (South Pole) -> near -Y; Lon 0 (Prime Meridian) -> aligns with +Z (Earth facing).
  */
-function selenographicToCartesian(
+export function selenographicToCartesian(
   latDeg: number,
   lonDeg: number,
   radius: number = MOON_RADIUS_UNITS,
@@ -144,18 +168,31 @@ function selenographicToCartesian(
   return v;
 }
 
+/**
+ * Inverse conversion: From 3D Cartesian position on Moon sphere back to Selenographic (lat, lon).
+ */
+export function cartesianToSelenographic(pos: THREE.Vector3): { latDeg: number; lonDeg: number } {
+  const p = pos.clone();
+  p.applyAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
+  const r = p.length();
+  if (r === 0) return { latDeg: 0, lonDeg: 0 };
 
-// Computes wide overview camera offset from the Moon such that the Sun at (0,0,0),
-// Earth, and Moon orbits are all visible, while the camera strictly targets the Moon
-function getSystemOverviewOffset(moonPos: THREE.Vector3): THREE.Vector3 {
-  const rXZ = Math.hypot(moonPos.x, moonPos.z);
-  const sunToMoonDir = rXZ > 0.001 
-    ? new THREE.Vector3(moonPos.x / rXZ, 0, moonPos.z / rXZ) 
-    : new THREE.Vector3(1, 0, 0);
-  const tangentDir = new THREE.Vector3(-sunToMoonDir.z, 0, sunToMoonDir.x);
-  return sunToMoonDir.clone().multiplyScalar(75)
-    .add(tangentDir.clone().multiplyScalar(60))
-    .add(new THREE.Vector3(0, 110, 0));
+  const phi = Math.acos(Math.max(-1, Math.min(1, p.y / r)));
+  const latDeg = 90 - (phi * 180 / Math.PI);
+
+  const theta = Math.atan2(p.z, -p.x);
+  let lonDeg = (theta * 180 / Math.PI) - 180;
+  if (lonDeg < -180) lonDeg += 360;
+  if (lonDeg > 180) lonDeg -= 360;
+
+  return { latDeg, lonDeg };
+}
+
+/**
+ * Converts backend MOON_ME Cartesian position (x_me, y_me, z_me) to Three.js coordinates.
+ */
+export function moonMeToThree(x_me: number, y_me: number, z_me: number): THREE.Vector3 {
+  return new THREE.Vector3(y_me, z_me, x_me);
 }
 
 /**
@@ -219,9 +256,9 @@ function createEllipticalOrbitTrail(
   }
 
   const geo = new THREE.BufferGeometry().setFromPoints(points);
-  const mat = new THREE.LineBasicMaterial({ 
-    color, 
-    transparent: true, 
+  const mat = new THREE.LineBasicMaterial({
+    color,
+    transparent: true,
     opacity: 0.40,
     linewidth: 1.5,
   });
@@ -249,7 +286,7 @@ function createEllipticalOrbitTrail(
   return group;
 }
 
-const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
+export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
   sites,
   selectedSiteId,
   onSelectSite,
@@ -329,6 +366,12 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
   const [showAxialTilts, setShowAxialTilts] = useState<boolean>(true);
   const [showLabels, setShowLabels] = useState<boolean>(true);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const hasLoadedOnceRef = useRef<boolean>(false);
+  useEffect(() => {
+    if (!isLoading) {
+      hasLoadedOnceRef.current = true;
+    }
+  }, [isLoading]);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [hoveredSite, setHoveredSite] = useState<MapSiteItem | null>(null);
 
@@ -345,12 +388,26 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
     return worldPos;
   }, []);
 
+  // Computes wide overview camera offset from the Moon such that the Sun at (0,0,0),
+  // Earth, and Moon orbits are all visible, while the camera strictly targets the Moon
+  const getSystemOverviewOffset = useCallback((moonPos: THREE.Vector3): THREE.Vector3 => {
+    const rXZ = Math.hypot(moonPos.x, moonPos.z);
+    const sunToMoonDir = rXZ > 0.001
+      ? new THREE.Vector3(moonPos.x / rXZ, 0, moonPos.z / rXZ)
+      : new THREE.Vector3(1, 0, 0);
+    const tangentDir = new THREE.Vector3(-sunToMoonDir.z, 0, sunToMoonDir.x);
+    return sunToMoonDir.clone().multiplyScalar(75)
+      .add(tangentDir.clone().multiplyScalar(60))
+      .add(new THREE.Vector3(0, 110, 0));
+  }, []);
+
+
   // ---------------------------------------------------------------------------
   // TRUE REAL-TIME SIMULATION CLOCK STATE
   // ---------------------------------------------------------------------------
   const initialTimeMs = useMemo(() => {
     const t = new Date(`${epochDate}T${epochHour.toString().padStart(2, '0')}:00:00Z`).getTime();
-    return isNaN(t) ? 1792065600000 : t; // Deterministic default epoch: 2026-10-14 12:00:00 UTC
+    return isNaN(t) ? Date.now() : t;
   }, [epochDate, epochHour]);
 
   const [simTimeMs, setSimTimeMs] = useState<number>(initialTimeMs);
@@ -392,15 +449,6 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
   useEffect(() => {
     onSimulationEpochChangeRef.current = onSimulationEpochChange;
   }, [onSimulationEpochChange]);
-
-  const onSelectSiteRef = useRef(onSelectSite);
-  useEffect(() => {
-    onSelectSiteRef.current = onSelectSite;
-  }, [onSelectSite]);
-
-  // Direct DOM references for 60 FPS real-time clock updating without React re-render overhead
-  const clockDisplayRef = useRef<HTMLSpanElement>(null);
-  const popoverLiveTimeRef = useRef<HTMLSpanElement>(null);
 
   const showLabelsRef = useRef<boolean>(showLabels);
   useEffect(() => {
@@ -478,11 +526,9 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
 
   // Stable references for high-performance 60 FPS animation loop
   const siteAnalysisRef = useRef(siteAnalysis);
-  useEffect(() => {
-    siteAnalysisRef.current = siteAnalysis;
-  }, [siteAnalysis]);
+  siteAnalysisRef.current = siteAnalysis;
   const lastSunlightStateUpdateTimeRef = useRef<number>(0);
-  const updateMarkerProjectionsRef = useRef<() => void>(() => {});
+  const updateMarkerProjectionsRef = useRef<() => void>(() => { });
   const lastProjectedMarkerRef = useRef<{
     siteId: string;
     screenX: number;
@@ -634,15 +680,11 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
     viewer.scene.globe.enableLighting = true;
     viewer.scene.globe.showGroundAtmosphere = false;
     viewer.scene.highDynamicRange = true;
-    viewer.scene.globe.maximumScreenSpaceError = 2.0;
-    viewer.scene.globe.tileCacheSize = 300;
-    viewer.scene.globe.preloadAncestors = true;
-    viewer.scene.globe.preloadSiblings = true;
-    viewer.scene.globe.depthTestAgainstTerrain = false;
 
     // Synchronize simulation time with Candidate Site Date & Hour
+    const simIso = `${epochDate}T${epochHour.toString().padStart(2, '0')}:00:00Z`;
     try {
-      const julianDate = Cesium.JulianDate.fromIso8601(new Date(simTimeRef.current).toISOString());
+      const julianDate = Cesium.JulianDate.fromIso8601(simIso);
       viewer.clock.currentTime = julianDate;
       viewer.clock.shouldAnimate = false;
     } catch {
@@ -654,7 +696,7 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
     clickHandler.setInputAction((click: any) => {
       const pickedObject = viewer.scene.pick(click.position);
       if (Cesium.defined(pickedObject) && pickedObject.id && pickedObject.id.id) {
-        onSelectSiteRef.current?.(pickedObject.id.id);
+        onSelectSite(pickedObject.id.id);
       }
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
@@ -672,7 +714,7 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
       }
       cesiumViewerRef.current = null;
     };
-  }, []); // Run once on mount; never tear down on prop updates
+  }, [onSelectSite]);
 
   // Synchronize Candidate Landing Site Beacons on Cesium globe without tearing down viewer
   useEffect(() => {
@@ -1135,8 +1177,6 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
       metalness: 0.02,
     });
     const moonMesh = new THREE.Mesh(moonGeo, moonMat);
-    // Align texture Prime Meridian (u=0.5, originally +X) with +Z (Earth-facing Selenographic frame)
-    moonMesh.rotation.y = Math.PI / 2;
     moonTiltGroup.add(moonMesh);
     moonMeshRef.current = moonMesh;
 
@@ -1208,7 +1248,6 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
       });
       moonGraticuleGroup.add(new THREE.Line(geo, mat));
     });
-    moonGraticuleGroup.rotation.y = Math.PI / 2;
     moonTiltGroup.add(moonGraticuleGroup);
     moonGraticuleGroupRef.current = moonGraticuleGroup;
 
@@ -1266,7 +1305,7 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
         container.removeChild(renderer.domElement);
       }
     };
-  }, []); // Run once on mount; never tear down on prop updates
+  }, [sites]);
 
   // Switch NASA Moon Trek WMTS Layer on Cesium Globe & Three.js Fallback
   useEffect(() => {
@@ -1443,10 +1482,6 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
     if (moonGroupRef.current) {
       moonGroupRef.current.updateWorldMatrix(true, true);
     }
-    if (moonTiltGroupRef.current) {
-      moonTiltGroupRef.current.updateWorldMatrix(true, false);
-    }
-    camera.updateMatrixWorld();
 
     const posMoonSolar = getMoonWorldPosition();
 
@@ -1512,6 +1547,7 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
       const camToPoint = camera.position.clone().sub(worldPos).normalize();
       const dot = surfaceNormal.dot(camToPoint);
       const distToCam = camera.position.distanceTo(worldPos);
+
       const screenVec = worldPos.clone().project(camera);
       isVisible = dot > 0.05 && screenVec.z > -1.0 && screenVec.z < 1.0 && distToCam < 80.0;
       screenX = screenVec.x * halfW + halfW;
@@ -1560,6 +1596,7 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
 
   useEffect(() => {
     updateMarkerProjectionsRef.current = updateMarkerProjections;
+    updateMarkerProjections();
   }, [updateMarkerProjections]);
 
   // ---------------------------------------------------------------------------
@@ -1589,26 +1626,6 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
       if (!Number.isFinite(currentSimTime)) {
         currentSimTime = Date.now();
         simTimeRef.current = currentSimTime;
-      }
-
-      // 1b. Dynamically update clock display span directly in DOM (60 FPS without React re-render overhead)
-      if (clockDisplayRef.current) {
-        const d = new Date(currentSimTime);
-        const clockStr = isNaN(d.getTime())
-          ? '2026-10-14 12:00:00 UTC'
-          : d.toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
-        if (clockDisplayRef.current.textContent !== clockStr) {
-          clockDisplayRef.current.textContent = clockStr;
-        }
-      }
-      if (popoverLiveTimeRef.current) {
-        const d = new Date(currentSimTime);
-        const clockStr = isNaN(d.getTime())
-          ? '2026-10-14 12:00:00 UTC'
-          : d.toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
-        if (popoverLiveTimeRef.current.textContent !== clockStr) {
-          popoverLiveTimeRef.current.textContent = clockStr;
-        }
       }
 
       // Synchronize live timeline cursor with simulation clock progression (~10 FPS throttle)
@@ -1831,9 +1848,10 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
           const distUnits = vWorld.length();
 
           const isMoonTrekActive = activeLayerRef.current.startsWith('MOON_TREK_');
-          // When Moon Trek Cesium overlay is active at close range, hide underlying base mesh to avoid z-fighting;
-          // otherwise keep Three.js 4K mesh visible so celestial bodies never disappear or blink.
-          if (isMoonTrekActive && distUnits <= 120.0) {
+          // When Moon Trek Cesium overlay is active at close range during static inspection,
+          // hide underlying base mesh to avoid z-fighting; during high-speed orbital playback (1h/s, 1d/s),
+          // keep Three.js 4K mesh visible so celestial bodies never disappear or blink.
+          if (isMoonTrekActive && distUnits <= 120.0 && (!isPlayingRef.current || playbackSpeedRef.current <= 10)) {
             if (moonMeshRef.current) moonMeshRef.current.visible = false;
           } else {
             if (moonMeshRef.current) moonMeshRef.current.visible = true;
@@ -1842,64 +1860,54 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
           if (isMoonTrekActive && distUnits <= 120.0 && cesiumMountRef.current) {
             cesiumMountRef.current.style.opacity = '1';
 
-            // Match Cesium camera frustum FOV exactly to Three.js camera FOV (eliminates parallax drift)
-            const frustum = cesiumViewer.camera.frustum as any;
-            if (frustum && typeof frustum.fov === 'number') {
-              const targetFovRad = THREE.MathUtils.degToRad(cam.fov);
-              if (
-                Math.abs(frustum.fov - targetFovRad) > 1e-4 ||
-                Math.abs(frustum.aspectRatio - cam.aspect) > 1e-4
-              ) {
-                frustum.fov = targetFovRad;
-                frustum.aspectRatio = cam.aspect;
-              }
-            }
-
             const moonWorldQuat = new THREE.Quaternion();
             if (moonTiltGroupRef.current) {
               moonTiltGroupRef.current.getWorldQuaternion(moonWorldQuat);
             }
 
-            // Express camera position and orientation in Moon local coordinates
-            const invMoonQuat = moonWorldQuat.clone().invert();
-            const camPosLocal = vWorld.clone().applyQuaternion(invMoonQuat);
-            const camForwardLocal = cam.getWorldDirection(new THREE.Vector3()).applyQuaternion(invMoonQuat);
-            const camUpLocal = cam.up.clone().applyQuaternion(cam.quaternion).applyQuaternion(invMoonQuat);
+            const vLocal = vWorld.clone().applyQuaternion(moonWorldQuat.clone().invert());
+            const { latDeg, lonDeg } = cartesianToSelenographic(vLocal);
 
-            // Permute Three.js Selenographic frame (X=90°E, Y=North, Z=Prime Meridian)
-            // to Cesium MCMF frame (X=Prime Meridian, Y=90°E, Z=North) with authentic radius scaling
-            const scale = LUNAR_MEAN_RADIUS_METERS / MOON_RADIUS_UNITS;
-            const destCesium = new Cesium.Cartesian3(
-              camPosLocal.z * scale,
-              camPosLocal.x * scale,
-              camPosLocal.y * scale
-            );
-            const dirCesium = new Cesium.Cartesian3(
-              camForwardLocal.z,
-              camForwardLocal.x,
-              camForwardLocal.y
-            );
-            const upCesium = new Cesium.Cartesian3(
-              camUpLocal.z,
-              camUpLocal.x,
-              camUpLocal.y
-            );
+            if (Number.isFinite(latDeg) && Number.isFinite(lonDeg)) {
+              const altitudeMeters = Math.max(
+                30000.0,
+                (distUnits - MOON_RADIUS_UNITS) * (LUNAR_MEAN_RADIUS_METERS / MOON_RADIUS_UNITS)
+              );
 
-            // Closed-form orthonormal transformation: dirCesium and upCesium are strictly orthogonal everywhere.
-            // Completely eliminates South Pole collinearity, camera roll gimbal lock, and 180° flipping.
-            cesiumViewer.camera.setView({
-              destination: destCesium,
-              orientation: {
-                direction: dirCesium,
-                up: upCesium,
-              },
-            });
+              const lunarEllipsoid = new Cesium.Ellipsoid(
+                LUNAR_MEAN_RADIUS_METERS,
+                LUNAR_MEAN_RADIUS_METERS,
+                LUNAR_MEAN_RADIUS_METERS
+              );
 
-            try {
-              const julianDate = Cesium.JulianDate.fromIso8601(new Date(currentSimTime).toISOString());
-              cesiumViewer.clock.currentTime = julianDate;
-            } catch {
-              // ignore
+              const destCesium = Cesium.Cartesian3.fromDegrees(
+                lonDeg,
+                latDeg,
+                altitudeMeters,
+                lunarEllipsoid
+              );
+
+              const upWorld = cam.up.clone().applyQuaternion(cam.quaternion);
+              const upLocal = upWorld.applyQuaternion(moonWorldQuat.clone().invert());
+              const upCesium = new Cesium.Cartesian3(upLocal.z, -upLocal.x, upLocal.y);
+
+              cesiumViewer.camera.setView({
+                destination: destCesium,
+                orientation: {
+                  direction: Cesium.Cartesian3.negate(
+                    Cesium.Cartesian3.normalize(destCesium, new Cesium.Cartesian3()),
+                    new Cesium.Cartesian3()
+                  ),
+                  up: upCesium,
+                },
+              });
+
+              try {
+                const julianDate = Cesium.JulianDate.fromIso8601(new Date(currentSimTime).toISOString());
+                cesiumViewer.clock.currentTime = julianDate;
+              } catch {
+                // ignore
+              }
             }
           } else if (distUnits > 120.0 && cesiumMountRef.current) {
             cesiumMountRef.current.style.opacity = '0';
@@ -2074,7 +2082,7 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
       ease: 'power2.inOut',
       onUpdate: () => controls.update(),
     });
-  }, [getMoonWorldPosition]);
+  }, [getMoonWorldPosition, getSystemOverviewOffset]);
 
   const handleStepZoom = useCallback((factor: number) => {
     if (!cameraRef.current || !controlsRef.current) return;
@@ -2133,21 +2141,21 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
     const normal = siteWorld.clone().sub(moonPos).normalize();
     // Regional zoom: ~2.1 distance from Moon center along normal vector directly facing candidate landing site
     const camOffset = normal.clone().multiplyScalar(2.1);
+    const camTarget = siteWorld.clone();
     const camPos = moonPos.clone().add(camOffset);
 
-    // Target the center of the Moon so OrbitControls pivots smoothly and consistently around the Moon without jumping
     gsap.to(controls.target, {
-      x: moonPos.x,
-      y: moonPos.y,
-      z: moonPos.z,
-      duration: 1.2,
+      x: camTarget.x,
+      y: camTarget.y,
+      z: camTarget.z,
+      duration: 1.4,
       ease: 'power2.inOut',
     });
     gsap.to(camera.position, {
       x: camPos.x,
       y: camPos.y,
       z: camPos.z,
-      duration: 1.2,
+      duration: 1.4,
       ease: 'power2.inOut',
       onUpdate: () => {
         controls.update();
@@ -2163,51 +2171,8 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
     prevSelectedSiteIdRef.current = selectedSiteId;
     const targetSite = sites.find((s) => s.id === selectedSiteId);
     if (!targetSite) return;
-
-    const camera = cameraRef.current;
-    const controls = controlsRef.current;
-    if (!camera || !controls) return;
-
-    const moonPos = getMoonWorldPosition();
-    setCameraFocusTarget('MOON');
-    gsap.killTweensOf(camera.position);
-    gsap.killTweensOf(controls.target);
-
-    if (moonGroupRef.current) {
-      moonGroupRef.current.updateWorldMatrix(true, true);
-    }
-
-    const siteLocal = selenographicToCartesian(targetSite.latitudeDeg, targetSite.longitudeDeg, MOON_RADIUS_UNITS, targetSite.elevationMeters || 0);
-    const siteWorld = siteLocal.clone();
-    if (moonTiltGroupRef.current) {
-      siteWorld.applyMatrix4(moonTiltGroupRef.current.matrixWorld);
-    } else {
-      siteWorld.add(moonPos);
-    }
-
-    const normal = siteWorld.clone().sub(moonPos).normalize();
-    const camOffset = normal.clone().multiplyScalar(2.1);
-    const camPos = moonPos.clone().add(camOffset);
-
-    gsap.to(controls.target, {
-      x: moonPos.x,
-      y: moonPos.y,
-      z: moonPos.z,
-      duration: 1.2,
-      ease: 'power2.inOut',
-    });
-    gsap.to(camera.position, {
-      x: camPos.x,
-      y: camPos.y,
-      z: camPos.z,
-      duration: 1.2,
-      ease: 'power2.inOut',
-      onUpdate: () => {
-        controls.update();
-        updateMarkerProjectionsRef.current?.();
-      },
-    });
-  }, [selectedSiteId, sites, getMoonWorldPosition]);
+    handleFocusCandidateSite(targetSite);
+  }, [selectedSiteId, sites, handleFocusCandidateSite]);
 
   // ---------------------------------------------------------------------------
   // Dynamic Date & Time Popover State & Handlers
@@ -2291,20 +2256,9 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
     const newMs = Date.UTC(year, monthIndex, day, hour, minute, second);
     if (isNaN(newMs)) return;
 
-    // Pause live playback so user scrub/selection is stable
-    setIsLive(false);
-
     simTimeRef.current = newMs;
     setSimTimeMs(newMs);
-
-    const d = new Date(newMs);
-    const clockStr = d.toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
-    if (clockDisplayRef.current) {
-      clockDisplayRef.current.textContent = clockStr;
-    }
-    if (popoverLiveTimeRef.current) {
-      popoverLiveTimeRef.current.textContent = clockStr;
-    }
+    setIsLive(false);
 
     const dateStr = `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     lastProcessedDatePropRef.current = dateStr;
@@ -2313,16 +2267,15 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
     if (syncParent) {
       debouncedSyncParent(dateStr, hour);
     }
-    onSimulationEpochChangeRef.current?.(d.toISOString());
+    onSimulationEpochChangeRef.current?.(new Date(newMs).toISOString());
   }, [debouncedSyncParent]);
 
   const handleDateInputChange = useCallback((dateStr: string) => {
     if (!dateStr) return;
     const parts = dateStr.split('-').map(Number);
     if (parts.length !== 3 || parts.some(isNaN)) return;
-    const d = new Date(simTimeRef.current);
-    setSimDateTime(parts[0], parts[1] - 1, parts[2], d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds(), true);
-  }, [setSimDateTime]);
+    setSimDateTime(parts[0], parts[1] - 1, parts[2], curSimHour, curSimMinute, curSimSecond, true);
+  }, [curSimHour, curSimMinute, curSimSecond, setSimDateTime]);
 
   const handleTimeInputChange = useCallback((timeStr: string) => {
     if (!timeStr) return;
@@ -2331,34 +2284,22 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
     const h = THREE.MathUtils.clamp(parts[0], 0, 23);
     const m = THREE.MathUtils.clamp(parts[1], 0, 59);
     const s = parts.length > 2 ? THREE.MathUtils.clamp(parts[2], 0, 59) : 0;
-    const d = new Date(simTimeRef.current);
+    const d = currentSimDateObj;
     setSimDateTime(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), h, m, s, true);
-  }, [setSimDateTime]);
+  }, [currentSimDateObj, setSimDateTime]);
 
   const handleTimeScrubberChange = useCallback((totalSeconds: number) => {
     const clamped = THREE.MathUtils.clamp(totalSeconds, 0, 86399);
     const h = Math.floor(clamped / 3600);
     const m = Math.floor((clamped % 3600) / 60);
     const s = clamped % 60;
-    const d = new Date(simTimeRef.current);
+    const d = currentSimDateObj;
     setSimDateTime(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), h, m, s, true);
-  }, [setSimDateTime]);
+  }, [currentSimDateObj, setSimDateTime]);
 
   const handleStepDays = useCallback((daysDelta: number) => {
     const targetMs = simTimeRef.current + daysDelta * 86400 * 1000;
     const d = new Date(targetMs);
-    setSimDateTime(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds(), true);
-  }, [setSimDateTime]);
-
-  const handleStepMonths = useCallback((monthsDelta: number) => {
-    const d = new Date(simTimeRef.current);
-    d.setUTCMonth(d.getUTCMonth() + monthsDelta);
-    setSimDateTime(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds(), true);
-  }, [setSimDateTime]);
-
-  const handleStepYears = useCallback((yearsDelta: number) => {
-    const d = new Date(simTimeRef.current);
-    d.setUTCFullYear(d.getUTCFullYear() + yearsDelta);
     setSimDateTime(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds(), true);
   }, [setSimDateTime]);
 
@@ -2369,9 +2310,9 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
   }, [setSimDateTime]);
 
   const handleApplyPresetHour = useCallback((h: number) => {
-    const d = new Date(simTimeRef.current);
+    const d = currentSimDateObj;
     setSimDateTime(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), h, 0, 0, true);
-  }, [setSimDateTime]);
+  }, [currentSimDateObj, setSimDateTime]);
 
   const handleSetToTodayUtc = useCallback(() => {
     const now = new Date();
@@ -2383,9 +2324,6 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
     simTimeRef.current += hours * 3600 * 1000;
     setSimTimeMs(simTimeRef.current);
     const d = new Date(simTimeRef.current);
-    const clockStr = d.toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
-    if (clockDisplayRef.current) clockDisplayRef.current.textContent = clockStr;
-    if (popoverLiveTimeRef.current) popoverLiveTimeRef.current.textContent = clockStr;
     const dateStr = d.toISOString().substring(0, 10);
     lastProcessedDatePropRef.current = dateStr;
     lastProcessedHourPropRef.current = d.getUTCHours();
@@ -2398,9 +2336,6 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
     simTimeRef.current += minutes * 60 * 1000;
     setSimTimeMs(simTimeRef.current);
     const d = new Date(simTimeRef.current);
-    const clockStr = d.toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
-    if (clockDisplayRef.current) clockDisplayRef.current.textContent = clockStr;
-    if (popoverLiveTimeRef.current) popoverLiveTimeRef.current.textContent = clockStr;
     const dateStr = d.toISOString().substring(0, 10);
     lastProcessedDatePropRef.current = dateStr;
     lastProcessedHourPropRef.current = d.getUTCHours();
@@ -2416,9 +2351,6 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
     simTimeRef.current = now;
     setSimTimeMs(now);
     const d = new Date(now);
-    const clockStr = d.toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
-    if (clockDisplayRef.current) clockDisplayRef.current.textContent = clockStr;
-    if (popoverLiveTimeRef.current) popoverLiveTimeRef.current.textContent = clockStr;
     const dateStr = d.toISOString().substring(0, 10);
     lastProcessedDatePropRef.current = dateStr;
     lastProcessedHourPropRef.current = d.getUTCHours();
@@ -2434,14 +2366,10 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
     if (!isNaN(targetMs)) {
       simTimeRef.current = targetMs;
       setSimTimeMs(targetMs);
-      const d = new Date(targetMs);
-      const clockStr = d.toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
-      if (clockDisplayRef.current) clockDisplayRef.current.textContent = clockStr;
-      if (popoverLiveTimeRef.current) popoverLiveTimeRef.current.textContent = clockStr;
       lastProcessedDatePropRef.current = epochDate;
       lastProcessedHourPropRef.current = epochHour;
       debouncedSyncParent(epochDate, epochHour);
-      onSimulationEpochChangeRef.current?.(d.toISOString());
+      onSimulationEpochChangeRef.current?.(new Date(targetMs).toISOString());
     }
   }, [epochDate, epochHour, debouncedSyncParent]);
 
@@ -2451,20 +2379,20 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
   }, [simTimeMs]);
 
   return (
-    <div 
+    <div
       ref={mountRef}
       className={`${isFullscreen ? 'fixed inset-0 z-50 h-screen w-screen' : 'relative w-full h-[520px] sm:h-[600px] md:h-[660px] lg:h-[720px]'} bg-[#040608] border border-white/20 overflow-hidden flex flex-col select-none group rounded-none`}
     >
       {/* 3D Three.js WebGL Canvas Mount */}
-      <div 
-        ref={canvasMountRef} 
-        className="w-full h-full cursor-grab active:cursor-grabbing outline-none" 
+      <div
+        ref={canvasMountRef}
+        className="w-full h-full cursor-grab active:cursor-grabbing outline-none"
       />
 
       {/* CesiumJS NASA Moon Trek Transparent Overlay Layer */}
-      <div 
-        ref={cesiumMountRef} 
-        className="cesium-viewer-transparent absolute inset-0 w-full h-full pointer-events-none z-10 overflow-hidden" 
+      <div
+        ref={cesiumMountRef}
+        className="cesium-viewer-transparent absolute inset-0 w-full h-full pointer-events-none z-10 overflow-hidden"
       />
 
       {/* Loading Overlay */}
@@ -2496,7 +2424,7 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
           onToggleLabels={() => setShowLabels((prev) => !prev)}
           isFullscreen={isFullscreen}
           onToggleFullscreen={toggleFullscreen}
-          isLoading={isLoading}
+          isLoading={isLoading && !hasLoadedOnceRef.current}
         />
 
         <SimulationConfigToolbar
@@ -2505,7 +2433,7 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
           onSelectSite={(site) => handleFocusCandidateSite(site)}
           activeLayer={activeLayer}
           onSelectLayer={(layer) => setActiveLayer(layer)}
-          isLoading={isLoading}
+          isLoading={isLoading && !hasLoadedOnceRef.current}
         />
       </div>
 
@@ -2533,102 +2461,101 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
           {projectedMarkers
             .filter(({ isSelected }) => isSelected)
             .map(({ site, screenX, screenY, isVisible }) => {
-            if (!isVisible) return null;
+              if (!isVisible) return null;
 
-            return (
-              <div
-                key={site.id}
-                ref={markerContainerRef}
-                style={{
-                  transform: `translate3d(${screenX}px, ${screenY}px, 0)`,
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  transition: 'none',
-                }}
-                className="pointer-events-none select-none z-20"
-              >
-                {/* Surface Reticle Point [■] on Location (Clickable to Toggle Details) */}
-                <button 
-                  type="button"
-                  className="absolute top-0 left-0 -translate-x-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center pointer-events-auto cursor-pointer group/pin focus:outline-none"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowDetailsCard((prev) => !prev);
+              return (
+                <div
+                  key={site.id}
+                  ref={markerContainerRef}
+                  style={{
+                    transform: `translate3d(${screenX}px, ${screenY}px, 0)`,
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    transition: 'none',
                   }}
-                  onMouseEnter={() => setHoveredSite(site)}
-                  onMouseLeave={() => setHoveredSite(null)}
-                  title={showDetailsCard ? "Click to hide details" : "Click to view landing site details"}
+                  className="pointer-events-none select-none z-20"
                 >
-                  {/* Point reticle [■] */}
-                  <div className="w-3.5 h-3.5 border border-[#58D8D0] bg-black/90 flex items-center justify-center shadow-[0_0_12px_#58D8D0] group-hover/pin:scale-125 transition-transform duration-100">
-                    <div className="w-1.5 h-1.5 bg-white" />
-                  </div>
-                  {/* Pulsing ring */}
-                  <div className="absolute w-5 h-5 border border-[#58D8D0]/60 rounded-full animate-ping pointer-events-none" />
-                </button>
-
-                {/* Details Card (Shown ONLY when the user clicks the point) */}
-                {showDetailsCard && (
-                  <div 
-                    className="absolute bottom-3 left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-auto cursor-default z-30 animate-in fade-in zoom-in-95 duration-100"
-                    onClick={(e) => e.stopPropagation()}
+                  {/* Surface Reticle Point [■] on Location (Clickable to Toggle Details) */}
+                  <button
+                    type="button"
+                    className="absolute top-0 left-0 -translate-x-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center pointer-events-auto cursor-pointer group/pin focus:outline-none"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowDetailsCard((prev) => !prev);
+                    }}
+                    onMouseEnter={() => setHoveredSite(site)}
+                    onMouseLeave={() => setHoveredSite(null)}
+                    title={showDetailsCard ? "Click to hide details" : "Click to view landing site details"}
                   >
-                    <div className="font-mono select-none bg-black/95 border border-[#58D8D0] shadow-[0_0_20px_rgba(88,216,208,0.5)] p-2 min-w-[195px] rounded-none">
-                      <div className="flex items-center justify-between gap-2 border-b border-white/20 pb-1 mb-1.5">
-                        <span className="font-bold uppercase tracking-wider text-[#58D8D0] text-[10px]">
-                          {formatSiteShortName(site.name)}
-                        </span>
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-2 h-2 bg-[#58D8D0] rounded-full shrink-0" />
-                          <button 
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setShowDetailsCard(false);
-                            }}
-                            className="text-white/60 hover:text-white text-[11px] leading-none px-1 py-0.5 rounded-none cursor-pointer ml-1"
-                            title="Close details"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      </div>
+                    {/* Point reticle [■] */}
+                    <div className="w-3.5 h-3.5 border border-[#58D8D0] bg-black/90 flex items-center justify-center shadow-[0_0_12px_#58D8D0] group-hover/pin:scale-125 transition-transform duration-100">
+                      <div className="w-1.5 h-1.5 bg-white" />
+                    </div>
+                    {/* Pulsing ring */}
+                    <div className="absolute w-5 h-5 border border-[#58D8D0]/60 rounded-full animate-ping pointer-events-none" />
+                  </button>
 
-                      <div className="flex flex-col gap-1 text-[8.5px] text-white/90">
-                        <div className="flex items-center justify-between font-mono tabular-nums text-slate-300">
-                          <span>LAT: {Math.abs(site.latitudeDeg).toFixed(2)}°S</span>
-                          <span>LON: {site.longitudeDeg >= 0 ? `${site.longitudeDeg.toFixed(2)}°E` : `${Math.abs(site.longitudeDeg).toFixed(2)}°W`}</span>
+                  {/* Details Card (Shown ONLY when the user clicks the point) */}
+                  {showDetailsCard && (
+                    <div
+                      className="absolute bottom-3 left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-auto cursor-default z-30 animate-in fade-in zoom-in-95 duration-100"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="font-mono select-none bg-black/95 border border-[#58D8D0] shadow-[0_0_20px_rgba(88,216,208,0.5)] p-2 min-w-[195px] rounded-none">
+                        <div className="flex items-center justify-between gap-2 border-b border-white/20 pb-1 mb-1.5">
+                          <span className="font-bold uppercase tracking-wider text-[#58D8D0] text-[10px]">
+                            {formatSiteShortName(site.name)}
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="w-2 h-2 bg-[#58D8D0] rounded-full shrink-0" />
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setShowDetailsCard(false);
+                              }}
+                              className="text-white/60 hover:text-white text-[11px] leading-none px-1 py-0.5 rounded-none cursor-pointer ml-1"
+                              title="Close details"
+                            >
+                              ✕
+                            </button>
+                          </div>
                         </div>
-                        <div className="flex items-center justify-between text-slate-400">
-                          <span>ELEV: {site.elevationMeters ? `${site.elevationMeters > 0 ? '+' : ''}${site.elevationMeters.toFixed(0)}m` : '0m'}</span>
-                          <span className={`px-1.5 py-0.5 font-bold uppercase text-[8px] border ${
-                            liveSunlightStatus.isIlluminated
+
+                        <div className="flex flex-col gap-1 text-[8.5px] text-white/90">
+                          <div className="flex items-center justify-between font-mono tabular-nums text-slate-300">
+                            <span>LAT: {Math.abs(site.latitudeDeg).toFixed(2)}°S</span>
+                            <span>LON: {site.longitudeDeg >= 0 ? `${site.longitudeDeg.toFixed(2)}°E` : `${Math.abs(site.longitudeDeg).toFixed(2)}°W`}</span>
+                          </div>
+                          <div className="flex items-center justify-between text-slate-400">
+                            <span>ELEV: {site.elevationMeters ? `${site.elevationMeters > 0 ? '+' : ''}${site.elevationMeters.toFixed(0)}m` : '0m'}</span>
+                            <span className={`px-1.5 py-0.5 font-bold uppercase text-[8px] border ${liveSunlightStatus.isIlluminated
                               ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/50'
                               : 'bg-rose-500/20 text-rose-300 border-rose-400/50'
-                          }`}>
-                            {liveSunlightStatus.isIlluminated ? '☀️ ILLUMINATED' : '🌑 IN SHADOW'}
-                          </span>
+                              }`}>
+                              {liveSunlightStatus.isIlluminated ? '☀️ ILLUMINATED' : '🌑 IN SHADOW'}
+                            </span>
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    {/* Micro connector line from card to surface reticle */}
-                    <div className="w-px h-2 bg-[#58D8D0]" />
-                  </div>
-                )}
-              </div>
-            );
-          })}
+                      {/* Micro connector line from card to surface reticle */}
+                      <div className="w-px h-2 bg-[#58D8D0]" />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
         </div>
       )}
 
       {/* Hovered Site Info Tooltip Overlay */}
       {hoveredSite && (
         <div className="absolute top-44 left-3 p-2 bg-black/95 border border-[#58D8D0]/60 rounded-none text-xs text-white z-20 pointer-events-none flex items-center gap-2 animate-fadeIn font-mono">
-          <div 
-            className="w-2 h-2 rounded-none shrink-0" 
-            style={{ backgroundColor: hoveredSite.pinColor || '#58D8D0' }} 
+          <div
+            className="w-2 h-2 rounded-none shrink-0"
+            style={{ backgroundColor: hoveredSite.pinColor || '#58D8D0' }}
           />
           <div className="flex flex-col">
             <span className="font-bold text-[#58D8D0] uppercase tracking-wider">{hoveredSite.name}</span>
@@ -2644,7 +2571,7 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
       ========================================================================= */}
       <div className="absolute bottom-2 left-2 right-2 flex items-center justify-center pointer-events-none z-20">
         <div className="flex flex-wrap items-center justify-center gap-1 sm:gap-1.5 p-1 px-2 sm:px-2.5 bg-black/95 border border-white/20 pointer-events-auto max-w-full rounded-none">
-          
+
           {/* LIVE Mode Button (1x Real-Time UTC) */}
           <button
             type="button"
@@ -2656,11 +2583,10 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
               }
             }}
             title="Toggle Live Real-Time 1× UTC Simulation"
-            className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 text-[9.5px] sm:text-[10px] font-mono font-bold transition-all cursor-pointer rounded-none ${
-              isLive
-                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/50'
-                : 'text-white/60 hover:text-white border border-white/20 hover:bg-white/10'
-            }`}
+            className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 text-[9.5px] sm:text-[10px] font-mono font-bold transition-all cursor-pointer rounded-none ${isLive
+              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/50'
+              : 'text-white/60 hover:text-white border border-white/20 hover:bg-white/10'
+              }`}
           >
             <Radio size={10} className={isLive ? 'text-emerald-400 animate-pulse' : 'text-white/50'} />
             <span>LIVE (1×)</span>
@@ -2734,30 +2660,23 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
             <RotateCcw size={10} />
             <span>RESET</span>
           </button>
-
-
-          {/* Monospace Clock Display with Synchronization Status & Interactive Popover Trigger */}
+          {/* Monospace Simulation Timestamp with Synchronization Status & Interactive Popover Trigger */}
           <div className="relative" ref={datePickerContainerRef}>
             <button
               type="button"
-              onClick={() => {
-                setSimTimeMs(simTimeRef.current);
-                setShowDatePicker((prev) => !prev);
-              }}
+              onClick={() => setShowDatePicker((prev) => !prev)}
               title="Click to select simulation Date & Time (UTC)"
-              className={`px-2 sm:px-2.5 py-0.5 sm:py-1 bg-black border font-mono text-[9.5px] sm:text-[10.5px] font-bold tracking-wider flex items-center gap-1 sm:gap-1.5 rounded-none tabular-nums cursor-pointer transition-all ${
-                showDatePicker
-                  ? 'border-[#58D8D0] text-[#58D8D0] shadow-[0_0_15px_rgba(88,216,208,0.3)] bg-[#58D8D0]/10'
-                  : 'border-white/20 text-white hover:border-[#58D8D0]/70 hover:bg-white/5'
-              }`}
+              className={`px-2 sm:px-2.5 py-0.5 sm:py-1 bg-black border font-mono text-[9.5px] sm:text-[10.5px] font-bold tracking-wider flex items-center gap-1.5 rounded-none tabular-nums cursor-pointer transition-all ${showDatePicker
+                ? 'border-[#58D8D0] text-[#58D8D0] shadow-[0_0_15px_rgba(88,216,208,0.3)] bg-[#58D8D0]/10'
+                : 'border-white/20 text-white hover:border-[#58D8D0]/70 hover:bg-white/5'
+                }`}
             >
               <Clock size={11} className={isLive ? "text-emerald-400 animate-pulse" : "text-[#58D8D0]"} />
-              <span ref={clockDisplayRef} className="truncate max-w-[140px] sm:max-w-none">{formattedSimUtc}</span>
-              <span className={`text-[8.5px] px-1 py-0.2 font-mono uppercase tracking-widest hidden sm:inline-block ${
-                isLive
-                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40'
-                  : 'bg-[#58D8D0]/15 text-[#58D8D0] border border-[#58D8D0]/40'
-              }`}>
+              <span className="truncate max-w-[140px] sm:max-w-none">{formattedSimUtc}</span>
+              <span className={`text-[8.5px] px-1 py-0.2 font-mono uppercase tracking-widest hidden sm:inline-block ${isLive
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40'
+                : 'bg-[#58D8D0]/15 text-[#58D8D0] border border-[#58D8D0]/40'
+                }`}>
                 {isLive ? 'LIVE' : 'SYNCED'}
               </span>
               <ChevronUp size={10} className={`transition-transform duration-200 text-white/50 ${showDatePicker ? 'rotate-180 text-[#58D8D0]' : ''}`} />
@@ -2765,324 +2684,201 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
 
             {/* Dynamic Date & Time Selector Popover */}
             {showDatePicker && (
-              <>
-                {/* Backdrop to catch clicks outside cleanly */}
-                <div 
-                  className="fixed inset-0 z-30 pointer-events-auto"
-                  onClick={() => setShowDatePicker(false)}
-                />
-                <div 
-                  className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-[350px] sm:w-[430px] max-w-[95vw] bg-[#070A0E]/98 backdrop-blur-xl border border-[#58D8D0]/40 p-3 sm:p-4 flex flex-col gap-3 z-40 font-mono shadow-[0_0_50px_rgba(0,0,0,0.95),0_0_25px_rgba(88,216,208,0.2)] rounded-none text-left select-text pointer-events-auto"
-                  onClick={(e) => e.stopPropagation()}
-                  onMouseDown={(e) => e.stopPropagation()}
-                >
-                  {/* Header */}
-                  <div className="flex items-center justify-between pb-2 border-b border-white/15">
-                    <div className="flex items-center gap-2">
-                      <Clock size={12} className="text-[#58D8D0]" />
-                      <span className="text-[10.5px] font-bold text-white uppercase tracking-wider">
-                        SIMULATION EPOCH SELECTOR (UTC)
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (isPlaying) {
-                            setIsPlaying(false);
-                            setIsLive(false);
-                          } else {
-                            setIsPlaying(true);
-                          }
-                        }}
-                        className={`px-2 py-0.5 border text-[9px] font-bold cursor-pointer transition-colors ${
-                          isPlaying
-                            ? 'bg-amber-500/20 text-amber-300 border-amber-400/40 hover:bg-amber-500/30'
-                            : 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40 hover:bg-emerald-500/30'
-                        }`}
-                        title={isPlaying ? "Pause simulation clock to set time" : "Resume simulation playback"}
-                      >
-                        {isPlaying ? 'PAUSE CLOCK' : 'PLAY CLOCK'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setShowDatePicker(false)}
-                        className="text-white/40 hover:text-white p-0.5 transition-colors cursor-pointer"
-                        title="Close Epoch Selector"
-                      >
-                        <X size={13} />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Live Status Readout */}
-                  <div className="flex items-center justify-between bg-black/60 border border-white/10 px-2.5 py-1.5 text-[10px]">
-                    <span className="text-white/50 uppercase">ACTIVE SIMULATION TIME:</span>
-                    <span ref={popoverLiveTimeRef} className="font-bold text-[#58D8D0] tabular-nums tracking-wide">
-                      {formattedSimUtc}
+              <div
+                className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-[340px] sm:w-[410px] max-w-[95vw] bg-[#070A0E]/98 backdrop-blur-xl border border-[#58D8D0]/40 p-3 sm:p-4 flex flex-col gap-3 z-40 font-mono shadow-[0_0_50px_rgba(0,0,0,0.95),0_0_25px_rgba(88,216,208,0.2)] rounded-none text-left select-text"
+                onClick={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                {/* Header */}
+                <div className="flex items-center justify-between pb-2 border-b border-white/15">
+                  <div className="flex items-center gap-2">
+                    <Clock size={12} className="text-[#58D8D0]" />
+                    <span className="text-[10.5px] font-bold text-white uppercase tracking-wider">
+                      SIMULATION EPOCH SELECTOR (UTC)
                     </span>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowDatePicker(false)}
+                    className="text-white/40 hover:text-white p-0.5 transition-colors cursor-pointer"
+                    title="Close Epoch Selector"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
 
-                  {/* Date Selection */}
-                  <div className="flex flex-col gap-1.5">
-                    <div className="flex items-center justify-between text-[10px]">
-                      <label htmlFor="sim-date-picker-input" className="text-white/60 uppercase font-semibold flex items-center gap-1.5">
-                        <Calendar size={11} className="text-[#ECC068]" />
-                        <span>MISSION DATE (UTC)</span>
-                      </label>
-                      <div className="flex items-center gap-1 text-[9px]">
-                        <button
-                          type="button"
-                          onClick={() => handleStepYears(-1)}
-                          className="px-1 py-0.5 bg-white/5 hover:bg-white/15 border border-white/15 text-white/70 hover:text-white cursor-pointer"
-                          title="Step Backward -1 Year"
-                        >
-                          -1y
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleStepMonths(-1)}
-                          className="px-1 py-0.5 bg-white/5 hover:bg-white/15 border border-white/15 text-white/70 hover:text-white cursor-pointer"
-                          title="Step Backward -1 Month"
-                        >
-                          -1m
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleStepDays(-1)}
-                          className="px-1.5 py-0.5 bg-white/5 hover:bg-white/15 border border-white/15 text-white/70 hover:text-white cursor-pointer"
-                          title="Step Backward -1 Day"
-                        >
-                          -1d
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleStepDays(1)}
-                          className="px-1.5 py-0.5 bg-white/5 hover:bg-white/15 border border-white/15 text-white/70 hover:text-white cursor-pointer"
-                          title="Step Forward +1 Day"
-                        >
-                          +1d
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleStepMonths(1)}
-                          className="px-1 py-0.5 bg-white/5 hover:bg-white/15 border border-white/15 text-white/70 hover:text-white cursor-pointer"
-                          title="Step Forward +1 Month"
-                        >
-                          +1m
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleStepYears(1)}
-                          className="px-1 py-0.5 bg-white/5 hover:bg-white/15 border border-white/15 text-white/70 hover:text-white cursor-pointer"
-                          title="Step Forward +1 Year"
-                        >
-                          +1y
-                        </button>
-                      </div>
+                {/* Live Status Readout */}
+                <div className="flex items-center justify-between bg-black/60 border border-white/10 px-2.5 py-1.5 text-[10px]">
+                  <span className="text-white/50 uppercase">ACTIVE SIMULATION TIME:</span>
+                  <span className="font-bold text-[#58D8D0] tabular-nums tracking-wide">{formattedSimUtc}</span>
+                </div>
+
+                {/* Date Selection */}
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between text-[10px]">
+                    <label htmlFor="sim-date-picker-input" className="text-white/60 uppercase font-semibold flex items-center gap-1.5">
+                      <Calendar size={11} className="text-[#ECC068]" />
+                      <span>MISSION DATE (UTC)</span>
+                    </label>
+                    <div className="flex items-center gap-1 text-[9px]">
+                      <button
+                        type="button"
+                        onClick={() => handleStepDays(-1)}
+                        className="px-1.5 py-0.5 bg-white/5 hover:bg-white/15 border border-white/15 text-white/70 hover:text-white cursor-pointer"
+                        title="Step Backward -1 Day"
+                      >
+                        -1d
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleStepDays(1)}
+                        className="px-1.5 py-0.5 bg-white/5 hover:bg-white/15 border border-white/15 text-white/70 hover:text-white cursor-pointer"
+                        title="Step Forward +1 Day"
+                      >
+                        +1d
+                      </button>
                     </div>
+                  </div>
+                  <input
+                    id="sim-date-picker-input"
+                    type="date"
+                    value={curSimDateString}
+                    min="1969-01-01"
+                    max="2050-01-01"
+                    onChange={(e) => handleDateInputChange(e.target.value)}
+                    className="w-full bg-black/80 border border-white/25 focus:border-[#58D8D0] focus:ring-1 focus:ring-[#58D8D0]/50 px-2.5 py-1.5 text-xs text-white font-mono tracking-wider outline-none transition-all cursor-pointer rounded-none [color-scheme:dark]"
+                  />
+                </div>
+
+                {/* Quick Date Epoch Presets */}
+                <div className="flex flex-wrap items-center gap-1 text-[9px]">
+                  <span className="text-white/40 uppercase mr-0.5">PRESETS:</span>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyPresetDate('2026-10-14', 12)}
+                    className={`px-2 py-0.5 border cursor-pointer transition-colors ${curSimDateString === '2026-10-14'
+                      ? 'bg-[#58D8D0]/20 text-[#58D8D0] border-[#58D8D0]/50 font-bold'
+                      : 'bg-white/5 text-white/70 border-white/15 hover:text-white hover:bg-white/10'
+                      }`}
+                    title="Artemis III Target Reference Epoch (2026-10-14 12:00 UTC)"
+                  >
+                    Artemis III
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyPresetDate('2027-03-15', 12)}
+                    className={`px-2 py-0.5 border cursor-pointer transition-colors ${curSimDateString === '2027-03-15'
+                      ? 'bg-[#ECC068]/20 text-[#ECC068] border-[#ECC068]/50 font-bold'
+                      : 'bg-white/5 text-white/70 border-white/15 hover:text-white hover:bg-white/10'
+                      }`}
+                    title="Future Mission Candidate Epoch (2027-03-15 12:00 UTC)"
+                  >
+                    Future 2027
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyPresetDate('1969-07-20', 20)}
+                    className={`px-2 py-0.5 border cursor-pointer transition-colors ${curSimDateString === '1969-07-20'
+                      ? 'bg-amber-500/20 text-amber-300 border-amber-400/50 font-bold'
+                      : 'bg-white/5 text-white/70 border-white/15 hover:text-white hover:bg-white/10'
+                      }`}
+                    title="Apollo 11 Historical Landing (1969-07-20 20:00 UTC)"
+                  >
+                    Apollo 11
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSetToTodayUtc}
+                    className="px-2 py-0.5 bg-white/5 text-emerald-400 border border-emerald-400/30 hover:bg-emerald-500/15 cursor-pointer font-bold"
+                    title="Current Today UTC"
+                  >
+                    Today
+                  </button>
+                </div>
+
+                {/* Time of Day Control & Scrubber */}
+                <div className="flex flex-col gap-2 pt-2 border-t border-white/10">
+                  <div className="flex items-center justify-between text-[10px]">
+                    <label htmlFor="sim-time-picker-input" className="text-white/60 uppercase font-semibold flex items-center gap-1.5">
+                      <Clock size={11} className="text-[#58D8D0]" />
+                      <span>TIME OF DAY (UTC)</span>
+                    </label>
                     <input
-                      id="sim-date-picker-input"
-                      type="date"
-                      value={curSimDateString}
-                      min="1900-01-01"
-                      max="2050-01-01"
-                      onChange={(e) => handleDateInputChange(e.target.value)}
-                      className="w-full bg-black/80 border border-white/25 focus:border-[#58D8D0] focus:ring-1 focus:ring-[#58D8D0]/50 px-2.5 py-1.5 text-xs text-white font-mono tracking-wider outline-none transition-all cursor-pointer rounded-none [color-scheme:dark]"
+                      id="sim-time-picker-input"
+                      type="time"
+                      step="1"
+                      value={`${String(curSimHour).padStart(2, '0')}:${String(curSimMinute).padStart(2, '0')}:${String(curSimSecond).padStart(2, '0')}`}
+                      onChange={(e) => handleTimeInputChange(e.target.value)}
+                      className="bg-black/90 border border-white/25 focus:border-[#58D8D0] px-1.5 py-0.5 text-[10.5px] text-[#58D8D0] font-mono outline-none cursor-pointer rounded-none"
                     />
                   </div>
 
-                  {/* Quick Date Epoch Presets */}
-                  <div className="flex flex-wrap items-center gap-1 text-[9px]">
-                    <span className="text-white/40 uppercase mr-0.5">PRESETS:</span>
-                    <button
-                      type="button"
-                      onClick={() => handleApplyPresetDate('2026-10-14', 12)}
-                      className={`px-2 py-0.5 border cursor-pointer transition-colors ${
-                        curSimDateString === '2026-10-14'
+                  {/* 24-Hour Interactive Dynamic Scrubber Slider */}
+                  <div className="flex flex-col gap-1">
+                    <input
+                      type="range"
+                      min="0"
+                      max="86399"
+                      step="60"
+                      value={curSimSecondsOfDay}
+                      onChange={(e) => handleTimeScrubberChange(Number(e.target.value))}
+                      className="w-full accent-[#58D8D0] bg-white/20 h-1.5 cursor-pointer rounded-none"
+                      title="Scrub time across the lunar day"
+                    />
+                    <div className="flex justify-between text-[8px] text-white/40 font-mono">
+                      <span>00:00</span>
+                      <span>06:00</span>
+                      <span>12:00</span>
+                      <span>18:00</span>
+                      <span>24:00</span>
+                    </div>
+                  </div>
+
+                  {/* Quick Time Presets */}
+                  <div className="grid grid-cols-4 gap-1 text-[9px] font-mono">
+                    {[
+                      { label: '00:00 UTC', h: 0 },
+                      { label: '06:00 UTC', h: 6 },
+                      { label: '12:00 UTC', h: 12 },
+                      { label: '18:00 UTC', h: 18 },
+                    ].map(({ label, h }) => (
+                      <button
+                        key={label}
+                        type="button"
+                        onClick={() => handleApplyPresetHour(h)}
+                        className={`py-1 text-center border cursor-pointer transition-colors ${curSimHour === h && curSimMinute === 0
                           ? 'bg-[#58D8D0]/20 text-[#58D8D0] border-[#58D8D0]/50 font-bold'
-                          : 'bg-white/5 text-white/70 border-white/15 hover:text-white hover:bg-white/10'
-                      }`}
-                      title="Artemis III Target Reference Epoch (2026-10-14 12:00 UTC)"
-                    >
-                      Artemis III
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleApplyPresetDate('2027-03-15', 12)}
-                      className={`px-2 py-0.5 border cursor-pointer transition-colors ${
-                        curSimDateString === '2027-03-15'
-                          ? 'bg-[#ECC068]/20 text-[#ECC068] border-[#ECC068]/50 font-bold'
-                          : 'bg-white/5 text-white/70 border-white/15 hover:text-white hover:bg-white/10'
-                      }`}
-                      title="Future Mission Candidate Epoch (2027-03-15 12:00 UTC)"
-                    >
-                      Future 2027
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleApplyPresetDate('2026-12-21', 12)}
-                      className={`px-2 py-0.5 border cursor-pointer transition-colors ${
-                        curSimDateString === '2026-12-21'
-                          ? 'bg-amber-500/20 text-amber-300 border-amber-400/50 font-bold'
-                          : 'bg-white/5 text-white/70 border-white/15 hover:text-white hover:bg-white/10'
-                      }`}
-                      title="Lunar Summer Solstice Peak Sun (2026-12-21 12:00 UTC)"
-                    >
-                      Summer Peak
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleApplyPresetDate('1969-07-20', 20)}
-                      className={`px-2 py-0.5 border cursor-pointer transition-colors ${
-                        curSimDateString === '1969-07-20'
-                          ? 'bg-cyan-500/20 text-cyan-300 border-cyan-400/50 font-bold'
-                          : 'bg-white/5 text-white/70 border-white/15 hover:text-white hover:bg-white/10'
-                      }`}
-                      title="Apollo 11 Historical Landing (1969-07-20 20:00 UTC)"
-                    >
-                      Apollo 11
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleSetToTodayUtc}
-                      className="px-2 py-0.5 bg-white/5 text-emerald-400 border border-emerald-400/30 hover:bg-emerald-500/15 cursor-pointer font-bold"
-                      title="Current Today UTC"
-                    >
-                      Today
-                    </button>
-                  </div>
-
-                  {/* Time of Day Control & Scrubber */}
-                  <div className="flex flex-col gap-2 pt-2 border-t border-white/10">
-                    <div className="flex items-center justify-between text-[10px]">
-                      <label htmlFor="sim-time-picker-input" className="text-white/60 uppercase font-semibold flex items-center gap-1.5">
-                        <Clock size={11} className="text-[#58D8D0]" />
-                        <span>TIME OF DAY (UTC)</span>
-                      </label>
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => handleStepTime(-1)}
-                          className="px-1.5 py-0.2 bg-white/5 hover:bg-white/15 border border-white/15 text-white/70 hover:text-white text-[9px]"
-                          title="Step Backward -1 Hour"
-                        >
-                          -1h
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleStepMinutes(-10)}
-                          className="px-1.5 py-0.2 bg-white/5 hover:bg-white/15 border border-white/15 text-white/70 hover:text-white text-[9px]"
-                          title="Step Backward -10 Minutes"
-                        >
-                          -10m
-                        </button>
-                        <input
-                          id="sim-time-picker-input"
-                          type="time"
-                          step="1"
-                          value={`${String(curSimHour).padStart(2, '0')}:${String(curSimMinute).padStart(2, '0')}:${String(curSimSecond).padStart(2, '0')}`}
-                          onChange={(e) => handleTimeInputChange(e.target.value)}
-                          className="bg-black/90 border border-white/25 focus:border-[#58D8D0] px-1.5 py-0.5 text-[10.5px] text-[#58D8D0] font-mono outline-none cursor-pointer rounded-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleStepMinutes(10)}
-                          className="px-1.5 py-0.2 bg-white/5 hover:bg-white/15 border border-white/15 text-white/70 hover:text-white text-[9px]"
-                          title="Step Forward +10 Minutes"
-                        >
-                          +10m
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleStepTime(1)}
-                          className="px-1.5 py-0.2 bg-white/5 hover:bg-white/15 border border-white/15 text-white/70 hover:text-white text-[9px]"
-                          title="Step Forward +1 Hour"
-                        >
-                          +1h
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* 24-Hour Interactive Dynamic Scrubber Slider */}
-                    <div className="flex flex-col gap-1">
-                      <input
-                        type="range"
-                        min="0"
-                        max="86399"
-                        step="60"
-                        value={curSimSecondsOfDay}
-                        onChange={(e) => handleTimeScrubberChange(Number(e.target.value))}
-                        className="w-full accent-[#58D8D0] bg-white/20 h-1.5 cursor-pointer rounded-none"
-                        title="Scrub time across the lunar day (dynamically rotates Sun vector)"
-                      />
-                      <div className="flex justify-between text-[8px] text-white/40 font-mono">
-                        <span>00:00</span>
-                        <span>06:00</span>
-                        <span>12:00</span>
-                        <span>18:00</span>
-                        <span>24:00</span>
-                      </div>
-                    </div>
-
-                    {/* Quick Time Presets */}
-                    <div className="grid grid-cols-4 gap-1 text-[9px] font-mono">
-                      {[
-                        { label: '00:00 UTC', h: 0 },
-                        { label: '06:00 UTC', h: 6 },
-                        { label: '12:00 UTC', h: 12 },
-                        { label: '18:00 UTC', h: 18 },
-                      ].map(({ label, h }) => (
-                        <button
-                          key={label}
-                          type="button"
-                          onClick={() => handleApplyPresetHour(h)}
-                          className={`py-1 text-center border cursor-pointer transition-colors ${
-                            curSimHour === h && curSimMinute === 0
-                              ? 'bg-[#58D8D0]/20 text-[#58D8D0] border-[#58D8D0]/50 font-bold'
-                              : 'bg-white/5 text-white/70 border-white/10 hover:text-white hover:bg-white/10'
+                          : 'bg-white/5 text-white/70 border-white/10 hover:text-white hover:bg-white/10'
                           }`}
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Footer Action Buttons */}
-                  <div className="flex items-center justify-between pt-2 border-t border-white/15 text-[9.5px]">
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={handleResetTimeToLive}
-                        className="flex items-center gap-1 px-2 py-1 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/40 text-emerald-300 font-bold cursor-pointer transition-colors"
-                        title="Resume live real-time simulation"
                       >
-                        <Radio size={10} className="animate-pulse" />
-                        <span>RESUME LIVE</span>
+                        {label}
                       </button>
-                      <button
-                        type="button"
-                        onClick={handleResetToMissionEpoch}
-                        className="flex items-center gap-1 px-2 py-1 bg-white/5 hover:bg-white/15 border border-white/20 text-white/70 hover:text-white cursor-pointer transition-colors"
-                        title="Reset time to selected base mission epoch"
-                      >
-                        <RotateCcw size={10} />
-                        <span>RESET EPOCH</span>
-                      </button>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => setShowDatePicker(false)}
-                      className="flex items-center gap-1 px-3 py-1 bg-[#58D8D0] hover:bg-[#48c2ba] text-black font-extrabold cursor-pointer transition-colors"
-                    >
-                      <Check size={11} />
-                      <span>DONE</span>
-                    </button>
+                    ))}
                   </div>
                 </div>
-              </>
+
+                {/* Footer Action Buttons */}
+                <div className="flex items-center justify-between pt-2 border-t border-white/15 text-[9.5px]">
+                  <button
+                    type="button"
+                    onClick={handleResetTimeToLive}
+                    className="flex items-center gap-1 px-2 py-1 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/40 text-emerald-300 font-bold cursor-pointer transition-colors"
+                    title="Resume live real-time simulation"
+                  >
+                    <Radio size={10} className="animate-pulse" />
+                    <span>RESUME LIVE</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowDatePicker(false)}
+                    className="flex items-center gap-1 px-3 py-1 bg-[#58D8D0] hover:bg-[#48c2ba] text-black font-extrabold cursor-pointer transition-colors"
+                  >
+                    <Check size={11} />
+                    <span>DONE</span>
+                  </button>
+                </div>
+              </div>
             )}
           </div>
 
@@ -3104,11 +2900,10 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
                   setIsPlaying(true);
                   setShowCustomSpeed(false);
                 }}
-                className={`px-1.5 py-0.5 text-[9.5px] font-mono cursor-pointer transition-all rounded-none ${
-                  playbackSpeed === val && !isLive && !showCustomSpeed
-                    ? 'bg-white text-black font-extrabold border border-white'
-                    : 'text-white/50 hover:text-white hover:bg-white/10'
-                }`}
+                className={`px-1.5 py-0.5 text-[9.5px] font-mono cursor-pointer transition-all rounded-none ${playbackSpeed === val && !isLive && !showCustomSpeed
+                  ? 'bg-white text-black font-extrabold border border-white'
+                  : 'text-white/50 hover:text-white hover:bg-white/10'
+                  }`}
               >
                 {label}
               </button>
@@ -3119,11 +2914,10 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
               <button
                 type="button"
                 onClick={() => setShowCustomSpeed(!showCustomSpeed)}
-                className={`px-1.5 py-0.5 text-[9.5px] font-mono cursor-pointer transition-all rounded-none ${
-                  showCustomSpeed || (![1, 10, 60, 600, 1000, 3600, 86400].includes(playbackSpeed) && !isLive)
-                    ? 'bg-amber-500/25 text-amber-300 font-bold border border-amber-400/50'
-                    : 'text-white/50 hover:text-white hover:bg-white/10'
-                }`}
+                className={`px-1.5 py-0.5 text-[9.5px] font-mono cursor-pointer transition-all rounded-none ${showCustomSpeed || (![1, 10, 60, 600, 1000, 3600, 86400].includes(playbackSpeed) && !isLive)
+                  ? 'bg-amber-500/25 text-amber-300 font-bold border border-amber-400/50'
+                  : 'text-white/50 hover:text-white hover:bg-white/10'
+                  }`}
               >
                 {showCustomSpeed || (![1, 10, 60, 600, 1000, 3600, 86400].includes(playbackSpeed) && !isLive) ? `${playbackSpeed}×` : 'CUSTOM'}
               </button>
@@ -3200,5 +2994,3 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
     </div>
   );
 };
-
-export const LunarInteractiveMap = React.memo(LunarInteractiveMapComponent);
