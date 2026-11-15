@@ -110,6 +110,10 @@ export const MoonTrekGlobe: React.FC<MoonTrekGlobeProps> = ({
     viewer.scene.globe.enableLighting = true;
     viewer.scene.globe.showGroundAtmosphere = false;
     viewer.scene.highDynamicRange = true;
+    viewer.scene.globe.maximumScreenSpaceError = 2.0;
+    viewer.scene.globe.tileCacheSize = 300;
+    viewer.scene.globe.preloadAncestors = true;
+    viewer.scene.globe.preloadSiblings = true;
 
     // Synchronize simulation time with Candidate Site Date & Hour
     const simIso = `${epochDate}T${epochHour.toString().padStart(2, '0')}:00:00Z`;
@@ -243,7 +247,6 @@ export const MoonTrekGlobe: React.FC<MoonTrekGlobeProps> = ({
         color: Cesium.Color.fromCssColorString('#00FF9D'),
         outlineColor: Cesium.Color.BLACK,
         outlineWidth: 2,
-        disableDepthTestDistance: 500000.0,
       },
       label: {
         text: ` ${selectedSite.name.toUpperCase()} \n [${typeof selectedSite.latitudeDeg === 'number' ? Math.abs(selectedSite.latitudeDeg).toFixed(2) : '89.50'}°S, ${typeof selectedSite.longitudeDeg === 'number' ? selectedSite.longitudeDeg.toFixed(2) : '0.00'}°E] [ACTIVE]`,
@@ -254,7 +257,6 @@ export const MoonTrekGlobe: React.FC<MoonTrekGlobeProps> = ({
         outlineWidth: 3,
         verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
         pixelOffset: new Cesium.Cartesian2(0, -14),
-        disableDepthTestDistance: 500000.0,
       },
     });
 

@@ -679,6 +679,11 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
     viewer.scene.globe.enableLighting = true;
     viewer.scene.globe.showGroundAtmosphere = false;
     viewer.scene.highDynamicRange = true;
+    viewer.scene.globe.maximumScreenSpaceError = 2.0;
+    viewer.scene.globe.tileCacheSize = 300;
+    viewer.scene.globe.preloadAncestors = true;
+    viewer.scene.globe.preloadSiblings = true;
+    viewer.scene.globe.depthTestAgainstTerrain = false;
 
     // Synchronize simulation time with Candidate Site Date & Hour
     const simIso = `${epochDate}T${epochHour.toString().padStart(2, '0')}:00:00Z`;
@@ -1176,6 +1181,8 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
       metalness: 0.02,
     });
     const moonMesh = new THREE.Mesh(moonGeo, moonMat);
+    // Align texture Prime Meridian (u=0.5, originally +X) with +Z (Earth-facing Selenographic frame)
+    moonMesh.rotation.y = Math.PI / 2;
     moonTiltGroup.add(moonMesh);
     moonMeshRef.current = moonMesh;
 
@@ -1247,6 +1254,7 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
       });
       moonGraticuleGroup.add(new THREE.Line(geo, mat));
     });
+    moonGraticuleGroup.rotation.y = Math.PI / 2;
     moonTiltGroup.add(moonGraticuleGroup);
     moonGraticuleGroupRef.current = moonGraticuleGroup;
 
@@ -1481,6 +1489,10 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
     if (moonGroupRef.current) {
       moonGroupRef.current.updateWorldMatrix(true, true);
     }
+    if (moonTiltGroupRef.current) {
+      moonTiltGroupRef.current.updateWorldMatrix(true, false);
+    }
+    camera.updateMatrixWorld();
 
     const posMoonSolar = getMoonWorldPosition();
 
@@ -1546,7 +1558,6 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
       const camToPoint = camera.position.clone().sub(worldPos).normalize();
       const dot = surfaceNormal.dot(camToPoint);
       const distToCam = camera.position.distanceTo(worldPos);
-
       const screenVec = worldPos.clone().project(camera);
       isVisible = dot > 0.05 && screenVec.z > -1.0 && screenVec.z < 1.0 && distToCam < 80.0;
       screenX = screenVec.x * halfW + halfW;
@@ -1847,10 +1858,9 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
           const distUnits = vWorld.length();
 
           const isMoonTrekActive = activeLayerRef.current.startsWith('MOON_TREK_');
-          // When Moon Trek Cesium overlay is active at close range during static inspection,
-          // hide underlying base mesh to avoid z-fighting; during high-speed orbital playback (1h/s, 1d/s),
-          // keep Three.js 4K mesh visible so celestial bodies never disappear or blink.
-          if (isMoonTrekActive && distUnits <= 120.0 && (!isPlayingRef.current || playbackSpeedRef.current <= 10)) {
+          // When Moon Trek Cesium overlay is active at close range, hide underlying base mesh to avoid z-fighting;
+          // otherwise keep Three.js 4K mesh visible so celestial bodies never disappear or blink.
+          if (isMoonTrekActive && distUnits <= 120.0) {
             if (moonMeshRef.current) moonMeshRef.current.visible = false;
           } else {
             if (moonMeshRef.current) moonMeshRef.current.visible = true;
@@ -1859,54 +1869,64 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
           if (isMoonTrekActive && distUnits <= 120.0 && cesiumMountRef.current) {
             cesiumMountRef.current.style.opacity = '1';
 
+            // Match Cesium camera frustum FOV exactly to Three.js camera FOV (eliminates parallax drift)
+            const frustum = cesiumViewer.camera.frustum as any;
+            if (frustum && typeof frustum.fov === 'number') {
+              const targetFovRad = THREE.MathUtils.degToRad(cam.fov);
+              if (
+                Math.abs(frustum.fov - targetFovRad) > 1e-4 ||
+                Math.abs(frustum.aspectRatio - cam.aspect) > 1e-4
+              ) {
+                frustum.fov = targetFovRad;
+                frustum.aspectRatio = cam.aspect;
+              }
+            }
+
             const moonWorldQuat = new THREE.Quaternion();
             if (moonTiltGroupRef.current) {
               moonTiltGroupRef.current.getWorldQuaternion(moonWorldQuat);
             }
 
-            const vLocal = vWorld.clone().applyQuaternion(moonWorldQuat.clone().invert());
-            const { latDeg, lonDeg } = cartesianToSelenographic(vLocal);
+            // Express camera position and orientation in Moon local coordinates
+            const invMoonQuat = moonWorldQuat.clone().invert();
+            const camPosLocal = vWorld.clone().applyQuaternion(invMoonQuat);
+            const camForwardLocal = cam.getWorldDirection(new THREE.Vector3()).applyQuaternion(invMoonQuat);
+            const camUpLocal = cam.up.clone().applyQuaternion(cam.quaternion).applyQuaternion(invMoonQuat);
 
-            if (Number.isFinite(latDeg) && Number.isFinite(lonDeg)) {
-              const altitudeMeters = Math.max(
-                30000.0,
-                (distUnits - MOON_RADIUS_UNITS) * (LUNAR_MEAN_RADIUS_METERS / MOON_RADIUS_UNITS)
-              );
+            // Permute Three.js Selenographic frame (X=90°E, Y=North, Z=Prime Meridian)
+            // to Cesium MCMF frame (X=Prime Meridian, Y=90°E, Z=North) with authentic radius scaling
+            const scale = LUNAR_MEAN_RADIUS_METERS / MOON_RADIUS_UNITS;
+            const destCesium = new Cesium.Cartesian3(
+              camPosLocal.z * scale,
+              camPosLocal.x * scale,
+              camPosLocal.y * scale
+            );
+            const dirCesium = new Cesium.Cartesian3(
+              camForwardLocal.z,
+              camForwardLocal.x,
+              camForwardLocal.y
+            );
+            const upCesium = new Cesium.Cartesian3(
+              camUpLocal.z,
+              camUpLocal.x,
+              camUpLocal.y
+            );
 
-              const lunarEllipsoid = new Cesium.Ellipsoid(
-                LUNAR_MEAN_RADIUS_METERS,
-                LUNAR_MEAN_RADIUS_METERS,
-                LUNAR_MEAN_RADIUS_METERS
-              );
+            // Closed-form orthonormal transformation: dirCesium and upCesium are strictly orthogonal everywhere.
+            // Completely eliminates South Pole collinearity, camera roll gimbal lock, and 180° flipping.
+            cesiumViewer.camera.setView({
+              destination: destCesium,
+              orientation: {
+                direction: dirCesium,
+                up: upCesium,
+              },
+            });
 
-              const destCesium = Cesium.Cartesian3.fromDegrees(
-                lonDeg,
-                latDeg,
-                altitudeMeters,
-                lunarEllipsoid
-              );
-
-              const upWorld = cam.up.clone().applyQuaternion(cam.quaternion);
-              const upLocal = upWorld.applyQuaternion(moonWorldQuat.clone().invert());
-              const upCesium = new Cesium.Cartesian3(upLocal.z, -upLocal.x, upLocal.y);
-
-              cesiumViewer.camera.setView({
-                destination: destCesium,
-                orientation: {
-                  direction: Cesium.Cartesian3.negate(
-                    Cesium.Cartesian3.normalize(destCesium, new Cesium.Cartesian3()),
-                    new Cesium.Cartesian3()
-                  ),
-                  up: upCesium,
-                },
-              });
-
-              try {
-                const julianDate = Cesium.JulianDate.fromIso8601(new Date(currentSimTime).toISOString());
-                cesiumViewer.clock.currentTime = julianDate;
-              } catch {
-                // ignore
-              }
+            try {
+              const julianDate = Cesium.JulianDate.fromIso8601(new Date(currentSimTime).toISOString());
+              cesiumViewer.clock.currentTime = julianDate;
+            } catch {
+              // ignore
             }
           } else if (distUnits > 120.0 && cesiumMountRef.current) {
             cesiumMountRef.current.style.opacity = '0';
@@ -2140,21 +2160,21 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
     const normal = siteWorld.clone().sub(moonPos).normalize();
     // Regional zoom: ~2.1 distance from Moon center along normal vector directly facing candidate landing site
     const camOffset = normal.clone().multiplyScalar(2.1);
-    const camTarget = siteWorld.clone();
     const camPos = moonPos.clone().add(camOffset);
 
+    // Target the center of the Moon so OrbitControls pivots smoothly and consistently around the Moon without jumping
     gsap.to(controls.target, {
-      x: camTarget.x,
-      y: camTarget.y,
-      z: camTarget.z,
-      duration: 1.4,
+      x: moonPos.x,
+      y: moonPos.y,
+      z: moonPos.z,
+      duration: 1.2,
       ease: 'power2.inOut',
     });
     gsap.to(camera.position, {
       x: camPos.x,
       y: camPos.y,
       z: camPos.z,
-      duration: 1.4,
+      duration: 1.2,
       ease: 'power2.inOut',
       onUpdate: () => {
         controls.update();
