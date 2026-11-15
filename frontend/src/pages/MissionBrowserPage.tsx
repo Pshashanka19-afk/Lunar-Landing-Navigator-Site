@@ -520,6 +520,11 @@ export const MissionBrowserPage: React.FC = () => {
     () => `${epochDate}T${String(epochHour).padStart(2, '0')}:00:00Z`
   );
 
+  // Memoized candidate site selector to preserve reference stability across renders
+  const handleSelectCandidateSite = useCallback((id: string) => {
+    setSelectedSiteId(id);
+  }, []);
+
   // Synchronize mission epoch from interactive map date/time selection
   const handleEpochDateHourChange = useCallback((newDate: string, newHour: number) => {
     setEpochDate(newDate);
@@ -1021,7 +1026,7 @@ export const MissionBrowserPage: React.FC = () => {
                 <LunarInteractiveMap
                   sites={candidateSites}
                   selectedSiteId={selectedSiteId}
-                  onSelectSite={(id) => setSelectedSiteId(id)}
+                  onSelectSite={handleSelectCandidateSite}
                   selectedForCompare={selectedForCompare}
                   isDemCovered={isDemCovered}
                   siteAnalysis={siteAnalysis}
@@ -1036,7 +1041,7 @@ export const MissionBrowserPage: React.FC = () => {
                 <MoonTrekGlobe
                   sites={candidateSites}
                   selectedSiteId={selectedSiteId}
-                  onSelectSite={(id) => setSelectedSiteId(id)}
+                  onSelectSite={handleSelectCandidateSite}
                   epochDate={epochDate}
                   epochHour={epochHour}
                 />
