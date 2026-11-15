@@ -29,7 +29,19 @@ export class SpiceProvider implements IEphemerisProvider {
     spiceEnabled = env.SPICE_ENABLED,
     configuredFrame = env.SPICE_FRAME
   ) {
-    this.kernelDir = path.resolve(process.cwd(), kernelDir);
+    let resolved = path.resolve(process.cwd(), kernelDir);
+    if (!fs.existsSync(resolved)) {
+      const backendSub = path.resolve(process.cwd(), 'backend', kernelDir);
+      if (fs.existsSync(backendSub)) {
+        resolved = backendSub;
+      } else {
+        const fromModule = path.resolve(__dirname, '../../../', kernelDir);
+        if (fs.existsSync(fromModule)) {
+          resolved = fromModule;
+        }
+      }
+    }
+    this.kernelDir = resolved;
     this.spiceEnabled = spiceEnabled;
     this.configuredFrame = configuredFrame;
   }

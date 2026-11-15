@@ -1,9 +1,16 @@
 import dotenv from 'dotenv';
+import fs from 'fs';
 import path from 'path';
 import { z } from 'zod';
 
-// Load environment variables from .env file
-dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+// Load environment variables from .env file (check current dir, then backend/ subfolder)
+const candidateEnvPaths = [
+  path.resolve(process.cwd(), '.env'),
+  path.resolve(process.cwd(), 'backend', '.env'),
+  path.resolve(__dirname, '../../.env'),
+];
+const activeEnvPath = candidateEnvPaths.find((p) => fs.existsSync(p)) || candidateEnvPaths[0];
+dotenv.config({ path: activeEnvPath });
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),

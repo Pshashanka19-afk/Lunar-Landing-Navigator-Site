@@ -21,7 +21,19 @@ export class DemService implements IDemProvider {
   private fallbackSyntheticFixture: IDemProvider | null = null;
 
   constructor(demPath = env.DEM_PATH, fallbackToSynthetic = false) {
-    this.demPath = path.resolve(process.cwd(), demPath);
+    let resolved = path.resolve(process.cwd(), demPath);
+    if (!fs.existsSync(resolved)) {
+      const backendSub = path.resolve(process.cwd(), 'backend', demPath);
+      if (fs.existsSync(backendSub)) {
+        resolved = backendSub;
+      } else {
+        const fromModule = path.resolve(__dirname, '../../../', demPath);
+        if (fs.existsSync(fromModule)) {
+          resolved = fromModule;
+        }
+      }
+    }
+    this.demPath = resolved;
     if (fallbackToSynthetic) {
       this.fallbackSyntheticFixture = SyntheticDemFixture.createFlatDem(0.0);
     }

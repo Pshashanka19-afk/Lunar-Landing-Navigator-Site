@@ -1,28 +1,28 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { 
-  Rocket, 
-  Orbit, 
-  ChevronDown, 
-  Check, 
-  ArrowRight, 
-  Download, 
-  Copy, 
-  Clock, 
+import {
+  Rocket,
+  Orbit,
+  ChevronDown,
+  Check,
+  ArrowRight,
+  Download,
+  Copy,
+  Clock,
   Sparkles,
   AlertCircle
 } from 'lucide-react';
 import { useRouter } from '../router';
-import { 
-  EARTH_LAUNCH_SITES, 
+import {
+  EARTH_LAUNCH_SITES,
   SPACECRAFT_PROFILES
 } from '../data/launchSites';
 import { type MapSiteItem } from '../components/LunarInteractiveMap';
 import { MissionTrajectoryVisualizer } from '../components/MissionTrajectoryVisualizer';
 import { MissionDatePicker } from '../components/MissionDatePicker';
-import { 
-  lunarApi, 
+import {
+  lunarApi,
   type WindowsCalculationResponse,
-  type HorizonProfileResponse 
+  type HorizonProfileResponse
 } from '../services/lunarApi';
 
 // Default candidate landing sites matching Mission Browser and backend defaults
@@ -281,36 +281,33 @@ export const MissionRoutePlannerPage: React.FC = () => {
           setCandidateSites(mapped);
         }
       }
-    }).catch(() => {});
+    }).catch(() => { });
     return () => { isMounted = false; };
   }, []);
 
   // Feasible landing site candidates filtered dynamically based on current arrival epoch
-  const feasibleSites = useMemo(() => {
-    const southPoleCandidates = candidateSites.filter(
-      (s) => s.id !== 'statio-shiv-shakti' && s.latitudeDeg <= -80
-    );
-    if (siteEvaluations.length === 0) return southPoleCandidates;
-
-    // Strict feasibility: positive sun elevation, direct Earth visibility, safe slope
-    const strictlyFeasible = siteEvaluations
+  const strictlyFeasibleSites = useMemo(() => {
+    return siteEvaluations
       .filter((e) => e.verdict === 'FEASIBLE' && e.site.id !== 'statio-shiv-shakti' && e.site.latitudeDeg <= -80)
       .map((e) => e.site);
-    if (strictlyFeasible.length > 0) return strictlyFeasible;
+  }, [siteEvaluations]);
 
-    // Fallback to marginal if no site has 100% optimal geometry
-    const marginal = siteEvaluations
+  const marginalSites = useMemo(() => {
+    return siteEvaluations
       .filter((e) => e.verdict === 'MARGINAL' && e.site.id !== 'statio-shiv-shakti' && e.site.latitudeDeg <= -80)
       .map((e) => e.site);
-    if (marginal.length > 0) return marginal;
+  }, [siteEvaluations]);
 
-    return southPoleCandidates;
-  }, [siteEvaluations, candidateSites]);
+  const feasibleSites = useMemo(() => {
+    if (strictlyFeasibleSites.length > 0) return strictlyFeasibleSites;
+    if (marginalSites.length > 0) return marginalSites;
+    return [];
+  }, [strictlyFeasibleSites, marginalSites]);
 
   // Destination sites shown to the user in the selector
   const displayedDestinations = useMemo(() => {
     if (filterOnlyFeasible) {
-      return feasibleSites;
+      return feasibleSites.length > 0 ? feasibleSites : candidateSites;
     }
     return candidateSites;
   }, [filterOnlyFeasible, feasibleSites, candidateSites]);
@@ -419,17 +416,25 @@ export const MissionRoutePlannerPage: React.FC = () => {
         const failureConstraints: string[] = [];
         const reasons: string[] = [];
 
-        if (site.id === 'statio-shiv-shakti' || site.latitudeDeg > -80 || !isDemCovered) {
-          failureConstraints.push('Outside South Polar target zone or LOLA 80m DEM coverage (requires 85°S-90°S).');
+        // 1. South Polar Mission Envelope Check (80°S - 90°S)
+        const isPolarMissionTarget = site.id !== 'statio-shiv-shakti' && site.latitudeDeg <= -80 && site.latitudeDeg >= -90;
+        if (!isPolarMissionTarget) {
+          failureConstraints.push('Outside South Polar target zone (requires 80°S–90°S target latitude).');
         }
+
+        // 2. Topographic Landing Slope Safety Limit (LOLA 80m DEM)
         if (!isSafeSlope) {
           failureConstraints.push(`Terrain slope (${fmt(slope, 1)}°) exceeds safety threshold (≤${fmt(reqMaxSlopeDeg, 1)}°).`);
         }
+
+        // 3. Solar Illumination & Touchdown Photovoltaic Feasibility
         if (!isSunLit) {
-          failureConstraints.push(`Site is in shadow at touchdown. Photovoltaic power unavailable.`);
+          failureConstraints.push(`Site is in shadow at touchdown (${sunEl >= 0 ? '+' : ''}${fmt(sunEl, 1)}°). Photovoltaic power unavailable.`);
         }
+
+        // 4. Direct-to-Earth Communication Line-of-Sight
         if (reqRequireEarthLos && !isEarthVis) {
-          failureConstraints.push(`Earth is below local crater horizon (${fmt(earthEl, 1)}°). Direct-To-Earth link obstructed.`);
+          failureConstraints.push(`Earth is below local crater horizon (${earthEl >= 0 ? '+' : ''}${fmt(earthEl, 1)}°). Direct-To-Earth link obstructed.`);
         }
 
         let verdict: 'FEASIBLE' | 'MARGINAL' | 'NOT_FEASIBLE' = 'NOT_FEASIBLE';
@@ -718,7 +723,7 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
 
   return (
     <div className="w-full bg-[#05070A] text-neutral-100 min-h-screen flex flex-col font-sans select-none pt-20 pb-24">
-      
+
       {/* Toast Alert */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 px-4 py-2.5 bg-neutral-900 border border-neutral-700 text-white font-mono text-xs shadow-2xl flex items-center gap-2">
@@ -730,7 +735,7 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
       {/* SECTION A — ROUTE PLANNER INTRODUCTION */}
       <section className="w-full border-b border-white/[0.08] px-6 sm:px-12 lg:px-20 pt-8 pb-10 bg-gradient-to-b from-neutral-950 via-[#05070A] to-[#05070A]">
         <div className="max-w-7xl mx-auto flex flex-col gap-8">
-          
+
           <div className="flex flex-col gap-3">
             <span className="font-mono text-xs text-white/50 tracking-[0.25em] uppercase flex items-center gap-2">
               <span className="w-1.5 h-1.5 bg-white rounded-none" />
@@ -750,16 +755,16 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
           MAIN WORKSPACE: MISSION CONFIGURATION (LEFT) + 3D VISUALIZER (RIGHT)
       ========================================================================= */}
       <section className="w-full px-4 sm:px-8 lg:px-16 py-10 max-w-7xl mx-auto flex flex-col gap-14">
-        
+
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-          
+
           {/* -------------------------------------------------------------------
               LEFT COLUMN: FLIGHT CONFIGURATION
           ------------------------------------------------------------------- */}
           <div className="lg:col-span-5 flex flex-col gap-6">
-            
+
             <div className="bg-[#121316] border border-white/[0.08] rounded-[24px] p-6 sm:p-8 flex flex-col gap-7 shadow-xl shadow-black/40">
-              
+
               <div className="flex items-center justify-between border-b border-white/[0.08] pb-4">
                 <span className="font-sans text-sm uppercase tracking-wider font-bold text-white flex items-center gap-2">
                   <Rocket size={15} className="text-white/80" />
@@ -881,9 +886,23 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
                     <label className="font-sans text-xs uppercase text-neutral-400 tracking-wider font-semibold">
                       02 // Lunar Landing Destination
                     </label>
-                    <span className="px-2 py-0.5 bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-sans text-[10px] uppercase tracking-wider font-semibold rounded-full">
-                      ✓ {feasibleSites.length} FEASIBLE
-                    </span>
+                    {isEvaluating ? (
+                      <span className="px-2 py-0.5 bg-neutral-800 border border-white/10 text-neutral-400 font-sans text-[10px] uppercase tracking-wider font-semibold rounded-full animate-pulse">
+                        ANALYZING...
+                      </span>
+                    ) : strictlyFeasibleSites.length > 0 ? (
+                      <span className="px-2 py-0.5 bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-sans text-[10px] uppercase tracking-wider font-semibold rounded-full">
+                        ✓ {strictlyFeasibleSites.length} FEASIBLE
+                      </span>
+                    ) : marginalSites.length > 0 ? (
+                      <span className="px-2 py-0.5 bg-amber-500/15 border border-amber-500/30 text-amber-400 font-sans text-[10px] uppercase tracking-wider font-semibold rounded-full">
+                        ⚠ {marginalSites.length} MARGINAL
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 bg-rose-500/15 border border-rose-500/30 text-rose-400 font-sans text-[10px] uppercase tracking-wider font-semibold rounded-full">
+                        ✕ 0 FEASIBLE (SHADOWED)
+                      </span>
+                    )}
                   </div>
 
                   {/* Filter Only Feasible Toggle */}
@@ -891,22 +910,20 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
                     <button
                       type="button"
                       onClick={() => setFilterOnlyFeasible(true)}
-                      className={`px-2.5 py-1 uppercase tracking-wider transition-colors cursor-pointer rounded-lg ${
-                        filterOnlyFeasible
-                          ? 'bg-white text-black font-bold'
-                          : 'text-neutral-400 hover:text-white bg-neutral-900 border border-white/10'
-                      }`}
+                      className={`px-2.5 py-1 uppercase tracking-wider transition-colors cursor-pointer rounded-lg ${filterOnlyFeasible
+                        ? 'bg-white text-black font-bold'
+                        : 'text-neutral-400 hover:text-white bg-neutral-900 border border-white/10'
+                        }`}
                     >
-                      Feasible Only
+                      Feasible Only ({strictlyFeasibleSites.length})
                     </button>
                     <button
                       type="button"
                       onClick={() => setFilterOnlyFeasible(false)}
-                      className={`px-2.5 py-1 uppercase tracking-wider transition-colors cursor-pointer rounded-lg ${
-                        !filterOnlyFeasible
-                          ? 'bg-white text-black font-bold'
-                          : 'text-neutral-400 hover:text-white bg-neutral-900 border border-white/10'
-                      }`}
+                      className={`px-2.5 py-1 uppercase tracking-wider transition-colors cursor-pointer rounded-lg ${!filterOnlyFeasible
+                        ? 'bg-white text-black font-bold'
+                        : 'text-neutral-400 hover:text-white bg-neutral-900 border border-white/10'
+                        }`}
                     >
                       All ({candidateSites.length})
                     </button>
@@ -972,11 +989,10 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
                         key={hours}
                         type="button"
                         onClick={() => setCustomTransferHours(hours)}
-                        className={`py-2.5 rounded-xl border transition-all cursor-pointer text-center font-medium ${
-                          effectiveTransferHours === hours
-                            ? 'bg-white text-black font-bold border-white shadow-md'
-                            : 'bg-[#0c0d10] text-neutral-400 border-white/[0.1] hover:border-white/30 hover:text-white'
-                        }`}
+                        className={`py-2.5 rounded-xl border transition-all cursor-pointer text-center font-medium ${effectiveTransferHours === hours
+                          ? 'bg-white text-black font-bold border-white shadow-md'
+                          : 'bg-[#0c0d10] text-neutral-400 border-white/[0.1] hover:border-white/30 hover:text-white'
+                          }`}
                       >
                         {hours}h
                       </button>
@@ -1001,11 +1017,10 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
                         key={stay.hours}
                         type="button"
                         onClick={() => setSurfaceMissionDurationHours(stay.hours)}
-                        className={`py-2.5 rounded-xl border transition-all cursor-pointer text-center font-medium ${
-                          surfaceMissionDurationHours === stay.hours
-                            ? 'bg-white text-black font-bold border-white shadow-md'
-                            : 'bg-[#0c0d10] text-neutral-400 border-white/[0.1] hover:border-white/30 hover:text-white'
-                        }`}
+                        className={`py-2.5 rounded-xl border transition-all cursor-pointer text-center font-medium ${surfaceMissionDurationHours === stay.hours
+                          ? 'bg-white text-black font-bold border-white shadow-md'
+                          : 'bg-[#0c0d10] text-neutral-400 border-white/[0.1] hover:border-white/30 hover:text-white'
+                          }`}
                       >
                         {stay.label}
                       </button>
@@ -1041,11 +1056,10 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
                   type="button"
                   disabled={isEvaluating}
                   onClick={handleAnalyzeMission}
-                  className={`w-full py-3.5 px-6 font-sans font-bold text-sm uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-2.5 rounded-xl ${
-                    isEvaluating
-                      ? 'bg-neutral-800 text-neutral-500 cursor-wait'
-                      : 'bg-white hover:bg-neutral-200 text-black shadow-lg shadow-white/10 active:scale-[0.99]'
-                  }`}
+                  className={`w-full py-3.5 px-6 font-sans font-bold text-sm uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-2.5 rounded-xl ${isEvaluating
+                    ? 'bg-neutral-800 text-neutral-500 cursor-wait'
+                    : 'bg-white hover:bg-neutral-200 text-black shadow-lg shadow-white/10 active:scale-[0.99]'
+                    }`}
                 >
                   {isEvaluating ? (
                     <span className="flex items-center gap-2">
@@ -1073,9 +1087,9 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
               RIGHT COLUMN: 3D MISSION VISUALIZATION (CENTREPIECE)
           ------------------------------------------------------------------- */}
           <div className="lg:col-span-7 flex flex-col gap-4">
-            
+
             <div className="bg-[#121316] border border-white/[0.08] rounded-[24px] p-6 sm:p-8 flex flex-col gap-5 shadow-xl shadow-black/40">
-              
+
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.08] pb-4 font-sans text-xs">
                 <div className="flex items-center gap-2 text-white font-bold uppercase tracking-wider text-sm">
                   <Orbit size={15} className="text-white/80" />
@@ -1118,7 +1132,7 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
             SECTION D — TRAJECTORY RESULTS & CANDIDATE LANDING-SITE FEASIBILITY
         ======================================================================= */}
         <div className="flex flex-col gap-8 pt-8 border-t border-white/[0.08]">
-          
+
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
             <div className="flex flex-col gap-1.5">
               <span className="font-sans text-xs uppercase tracking-[0.2em] font-semibold text-white/50">
@@ -1153,99 +1167,101 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
             </span>
           </div>
 
-          {/* Candidate Sites Feasibility Cards Grid (Clean Starlink-style box styling) */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {/* Candidate Sites Feasibility Cards Grid (Refined, proportional Starlink-style box styling) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
             {siteEvaluations.map((evalItem) => {
               const isSelected = evalItem.site.id === selectedDestinationSiteId;
               const isFeasible = evalItem.verdict === 'FEASIBLE';
               const isMarginal = evalItem.verdict === 'MARGINAL';
 
+              // Concise title display to avoid 4-line wrapping on narrow cards
+              const displayTitle = evalItem.site.name
+                .replace('Crater - ', '')
+                .replace('Crater Rim', 'Rim');
+
               return (
                 <div
                   key={evalItem.site.id}
                   onClick={() => setSelectedDestinationSiteId(evalItem.site.id)}
-                  className={`rounded-[22px] p-7 sm:p-8 flex flex-col justify-between transition-all duration-200 cursor-pointer shadow-xl shadow-black/40 ${
-                    isSelected
-                      ? 'bg-[#16181d] border-2 border-white/70 ring-1 ring-white/20'
-                      : 'bg-[#121316] border border-white/[0.08] hover:border-white/25 hover:bg-[#15171b]'
-                  }`}
+                  className={`rounded-2xl p-5 sm:p-6 flex flex-col justify-between transition-all duration-200 cursor-pointer shadow-lg shadow-black/30 ${isSelected
+                    ? 'bg-[#15171c] border border-white/70 ring-1 ring-white/25 shadow-xl'
+                    : 'bg-[#111215] border border-white/[0.08] hover:border-white/25 hover:bg-[#141519]'
+                    }`}
                 >
                   <div>
-                    {/* Card Header & Badge */}
-                    <div className="flex items-start justify-between gap-3 mb-2">
-                      <h3 className="font-sans font-bold text-xl sm:text-2xl text-white tracking-tight leading-snug">
-                        {evalItem.site.name}
+                    {/* Card Header & Compact Badge */}
+                    <div className="flex items-start justify-between gap-2.5 mb-1.5 min-h-[44px]">
+                      <h3 className="font-sans font-bold text-base sm:text-[17px] text-white tracking-tight leading-snug">
+                        {displayTitle}
                       </h3>
-                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-sans font-semibold uppercase tracking-wider shrink-0 flex items-center gap-1.5 ${
-                        isFeasible 
-                          ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30' 
-                          : isMarginal 
-                          ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30' 
+                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-sans font-semibold uppercase tracking-wider shrink-0 flex items-center gap-1.5 mt-0.5 ${isFeasible
+                        ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                        : isMarginal
+                          ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
                           : 'bg-rose-500/15 text-rose-300 border border-rose-500/30'
-                      }`}>
+                        }`}>
                         <span className={`w-1.5 h-1.5 rounded-full ${isFeasible ? 'bg-emerald-400' : isMarginal ? 'bg-amber-400' : 'bg-rose-400'}`} />
                         {evalItem.verdict.replace('_', ' ')}
                       </span>
                     </div>
 
-                    {/* Subtitle / Description Text */}
-                    <p className="font-sans text-sm text-neutral-400 font-normal leading-relaxed mb-6">
+                    {/* Subtitle / Description Text (Proportional, balanced height) */}
+                    <p className="font-sans text-xs text-neutral-400 font-normal leading-relaxed mt-1 mb-4 min-h-[34px] line-clamp-2">
                       {evalItem.reasons[0] || 'Nominal polar exploration site with validated celestial lighting and communication lines.'}
                     </p>
 
-                    {/* Feature Bullets (Clean spacing and typographic hierarchy) */}
-                    <ul className="space-y-3 font-sans text-sm text-neutral-200 mb-8">
-                      <li className="flex items-start gap-2.5">
-                        <span className="text-neutral-400 text-base leading-none select-none">•</span>
+                    {/* Feature Bullets (Clean compact spacing and crisp typography) */}
+                    <ul className="space-y-2 font-sans text-xs text-neutral-300 mb-6">
+                      <li className="flex items-start gap-2">
+                        <span className="text-neutral-500 text-sm leading-none select-none">•</span>
                         <span>
-                          Sunlight: <strong className="text-white font-medium">{evalItem.sunElevationDeg >= 0 ? `+${fmt(evalItem.sunElevationDeg, 1)}°` : `${fmt(evalItem.sunElevationDeg, 1)}°`}</strong>
-                          <span className="text-neutral-400 ml-1.5">({evalItem.isSunLit ? 'Daylight' : 'Shadow'})</span>
+                          Sunlight: <strong className="text-white font-semibold">{evalItem.sunElevationDeg >= 0 ? `+${fmt(evalItem.sunElevationDeg, 1)}°` : `${fmt(evalItem.sunElevationDeg, 1)}°`}</strong>
+                          <span className="text-neutral-400 ml-1">({evalItem.isSunLit ? 'Daylight' : 'Shadow'})</span>
                         </span>
                       </li>
-                      <li className="flex items-start gap-2.5">
-                        <span className="text-neutral-400 text-base leading-none select-none">•</span>
+                      <li className="flex items-start gap-2">
+                        <span className="text-neutral-500 text-sm leading-none select-none">•</span>
                         <span>
-                          Earth Comms: <strong className="text-white font-medium">{evalItem.earthElevationDeg >= 0 ? `+${fmt(evalItem.earthElevationDeg, 1)}°` : `${fmt(evalItem.earthElevationDeg, 1)}°`}</strong>
-                          <span className="text-neutral-400 ml-1.5">({evalItem.isEarthVisible ? 'Direct Line-of-Sight' : 'Occluded'})</span>
+                          Earth Comms: <strong className="text-white font-semibold">{evalItem.earthElevationDeg >= 0 ? `+${fmt(evalItem.earthElevationDeg, 1)}°` : `${fmt(evalItem.earthElevationDeg, 1)}°`}</strong>
+                          <span className="text-neutral-400 ml-1">({evalItem.isEarthVisible ? 'Direct LOS' : 'Occluded'})</span>
                         </span>
                       </li>
-                      <li className="flex items-start gap-2.5">
-                        <span className="text-neutral-400 text-base leading-none select-none">•</span>
+                      <li className="flex items-start gap-2">
+                        <span className="text-neutral-500 text-sm leading-none select-none">•</span>
                         <span>
-                          Terrain Slope: <strong className="text-white font-medium">{fmt(evalItem.slopeDeg, 1)}°</strong>
-                          <span className="text-neutral-400 ml-1.5">({evalItem.isSafeSlope ? 'Safe' : 'Steep'})</span>
+                          Terrain Slope: <strong className="text-white font-semibold">{fmt(evalItem.slopeDeg, 1)}°</strong>
+                          <span className="text-neutral-400 ml-1">({evalItem.isSafeSlope ? 'Safe' : 'Steep'})</span>
                         </span>
                       </li>
-                      <li className="flex items-start gap-2.5">
-                        <span className="text-neutral-400 text-base leading-none select-none">•</span>
+                      <li className="flex items-start gap-2">
+                        <span className="text-neutral-500 text-sm leading-none select-none">•</span>
                         <span>
-                          Surface Temp: <strong className="text-white font-medium">{evalItem.temperatureK} K</strong>
-                          <span className="text-neutral-400 ml-1.5">({evalItem.temperatureC}°C)</span>
+                          Surface Temp: <strong className="text-white font-semibold">{evalItem.temperatureK} K</strong>
+                          <span className="text-neutral-400 ml-1">({evalItem.temperatureC}°C)</span>
                         </span>
                       </li>
-                      <li className="flex items-start gap-2.5">
-                        <span className="text-neutral-400 text-base leading-none select-none">•</span>
+                      <li className="flex items-start gap-2">
+                        <span className="text-neutral-500 text-sm leading-none select-none">•</span>
                         <span>
-                          Elevation: <strong className="text-white font-medium">{fmt(evalItem.elevationMeters, 0)} m MSL</strong>
-                          <span className="text-neutral-400 ml-1.5 font-mono text-xs">({fmt(Math.abs(evalItem.site.latitudeDeg), 2)}°S, {evalItem.site.longitudeDeg >= 0 ? `${fmt(evalItem.site.longitudeDeg, 2)}°E` : `${fmt(Math.abs(evalItem.site.longitudeDeg), 2)}°W`})</span>
+                          Elevation: <strong className="text-white font-semibold">{fmt(evalItem.elevationMeters, 0)} m MSL</strong>
+                          <span className="text-neutral-400 ml-1 font-mono text-[11px]">({fmt(Math.abs(evalItem.site.latitudeDeg), 2)}°S, {evalItem.site.longitudeDeg >= 0 ? `${fmt(evalItem.site.longitudeDeg, 2)}°E` : `${fmt(Math.abs(evalItem.site.longitudeDeg), 2)}°W`})</span>
                         </span>
                       </li>
                     </ul>
                   </div>
 
-                  {/* Card Action Button */}
-                  <div className="pt-2">
+                  {/* Card Action Button (Compact & Sleek) */}
+                  <div className="pt-1">
                     <button
                       type="button"
-                      className={`w-full py-3.5 px-4 rounded-xl font-sans text-sm font-semibold transition-all cursor-pointer flex items-center justify-center gap-2 ${
-                        isSelected 
-                          ? 'bg-white text-black shadow-lg shadow-white/10 hover:bg-neutral-200' 
-                          : 'bg-[#1e2025] hover:bg-[#282b32] text-neutral-200 hover:text-white border border-white/10'
-                      }`}
+                      className={`w-full py-2.5 px-3 rounded-lg font-sans text-xs font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${isSelected
+                        ? 'bg-white text-black shadow-md shadow-white/10 hover:bg-neutral-200'
+                        : 'bg-[#1b1d22] hover:bg-[#252830] text-neutral-200 hover:text-white border border-white/[0.08]'
+                        }`}
                     >
                       {isSelected ? (
                         <>
-                          <Check size={16} className="text-black" />
+                          <Check size={14} className="text-black" />
                           <span>Selected Destination</span>
                         </>
                       ) : (
@@ -1275,7 +1291,7 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
         ======================================================================= */}
         {recommendations.length > 0 && (
           <div className="bg-[#121316] border border-white/[0.08] rounded-[24px] p-6 sm:p-8 flex flex-col gap-6 shadow-xl shadow-black/40">
-            
+
             <div className="flex items-center justify-between border-b border-white/[0.08] pb-4">
               <div className="flex flex-col gap-1">
                 <span className="font-sans text-sm uppercase tracking-wider font-bold text-white flex items-center gap-2">
@@ -1290,7 +1306,7 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               {recommendations.slice(0, 2).map((rec) => (
-                <div 
+                <div
                   key={rec.id}
                   className="rounded-[20px] bg-[#16181d] border border-white/[0.08] hover:border-white/20 p-6 sm:p-7 flex flex-col justify-between gap-5 transition-all shadow-lg"
                 >
@@ -1338,7 +1354,7 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
         ======================================================================= */}
         {activeSiteEval && (
           <div className="bg-[#121316] border border-white/[0.08] rounded-[24px] p-6 sm:p-8 flex flex-col gap-6 shadow-xl shadow-black/40">
-            
+
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/[0.08] pb-4 font-sans text-xs">
               <span className="font-bold text-sm uppercase tracking-wider text-white flex items-center gap-2">
                 <Clock size={16} className="text-neutral-400" />
@@ -1394,7 +1410,7 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
 
             {/* Multi-Track Visual Timeline Bars */}
             <div className="p-5 bg-[#0c0d10] border border-white/[0.06] rounded-xl flex flex-col gap-3.5 font-sans text-xs">
-              
+
               {/* Sunlight Track */}
               <div className="flex items-center gap-3">
                 <span className="w-24 text-xs text-neutral-400 font-medium">Sunlight</span>
@@ -1447,7 +1463,7 @@ Equilibrium Temperature: ${fmt(activeSiteEval.temperatureK, 1)} K (${fmt(activeS
         ======================================================================= */}
         {activeSiteEval && (
           <div className="bg-[#121316] border border-white/[0.1] rounded-[24px] p-6 sm:p-8 flex flex-col gap-6 shadow-xl shadow-black/40">
-            
+
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/[0.08] pb-5">
               <div className="flex flex-col gap-1">
                 <span className="font-sans text-xs uppercase tracking-[0.2em] font-semibold text-white/50">

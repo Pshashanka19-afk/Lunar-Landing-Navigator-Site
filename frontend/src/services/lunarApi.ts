@@ -575,17 +575,17 @@ export const lunarApi = {
         body: JSON.stringify(requestBody),
       });
     } catch (err: any) {
-      if (
-        requestBody.demProvider === 'geotiff' &&
-        err.message &&
-        (err.message.includes('outside DEM coverage') || err.message.includes('NoData'))
-      ) {
-        // Automatically retry with synthetic datum provider
-        return apiFetch<HorizonProfileResponse>('/terrain/horizon', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...requestBody, demProvider: 'synthetic' }),
-        });
+      if (requestBody.demProvider === 'geotiff') {
+        try {
+          // Automatically retry with synthetic datum provider if GeoTIFF is out-of-bounds or unavailable
+          return await apiFetch<HorizonProfileResponse>('/terrain/horizon', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...requestBody, demProvider: 'synthetic' }),
+          });
+        } catch {
+          // Fall through to throw original error
+        }
       }
       throw err;
     }
@@ -615,17 +615,17 @@ export const lunarApi = {
         body: JSON.stringify(requestBody),
       });
     } catch (err: any) {
-      if (
-        requestBody.demProvider === 'geotiff' &&
-        err.message &&
-        (err.message.includes('outside DEM coverage') || err.message.includes('NoData'))
-      ) {
-        // Automatically retry with synthetic datum provider
-        return apiFetch<SurfaceNormalResponse>('/terrain/surface-normal', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...requestBody, demProvider: 'synthetic' }),
-        });
+      if (requestBody.demProvider === 'geotiff') {
+        try {
+          // Automatically retry with synthetic datum provider if GeoTIFF is out-of-bounds or unavailable
+          return await apiFetch<SurfaceNormalResponse>('/terrain/surface-normal', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...requestBody, demProvider: 'synthetic' }),
+          });
+        } catch {
+          // Fall through to throw original error
+        }
       }
       throw err;
     }
