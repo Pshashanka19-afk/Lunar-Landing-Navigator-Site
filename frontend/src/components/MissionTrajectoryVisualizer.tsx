@@ -12,7 +12,7 @@ import {
   ZoomOut,
   AlertTriangle,
   ChevronDown,
-  ChevronUp
+  X
 } from 'lucide-react';
 import { type EarthLaunchSite, type SpacecraftProfile } from '../data/launchSites';
 import { type MapSiteItem } from './LunarInteractiveMap';
@@ -1168,41 +1168,48 @@ export const MissionTrajectoryVisualizer: React.FC<MissionTrajectoryVisualizerPr
       {/* TOP LEFT DOSSIER: Spacecraft Flight Dossier & Mission Elapsed Time (Collapsible) */}
       <div className="absolute top-11 sm:top-12 left-2.5 pointer-events-none z-10 flex flex-col gap-1 max-w-[260px] sm:max-w-xs font-mono text-[9px]">
         {isDossierCollapsed ? (
-          <div 
+          <button 
+            type="button"
             onClick={() => setIsDossierCollapsed(false)}
-            className="p-1.5 px-2 bg-black/90 border border-white/20 flex items-center justify-between gap-2.5 text-white/80 shadow-lg pointer-events-auto cursor-pointer hover:bg-black"
-            title="Expand Flight Dossier"
+            className="p-1.5 px-2.5 bg-black/90 border border-white/20 hover:border-[#58D8D0] flex items-center justify-between gap-2.5 text-white shadow-xl pointer-events-auto cursor-pointer transition-all rounded-none group hover:bg-black/95 text-left"
+            title="Open Flight Telemetry Details"
           >
             <span className="text-[#58D8D0] font-bold uppercase tracking-wider flex items-center gap-1.5 truncate">
-              <Activity size={11} className="shrink-0" /> {spacecraftProfile.name}
+              <Activity size={11} className="shrink-0 text-[#58D8D0]" />
+              <span className="truncate">{spacecraftProfile.name}</span>
             </span>
-            <span className="text-white font-mono text-[8px] bg-white/10 px-1.5 py-0.5 shrink-0">
+            <span className="text-white/80 font-mono text-[8px] bg-white/10 px-1.5 py-0.5 shrink-0 border border-white/10">
               {(progress * 100).toFixed(1)}%
             </span>
-            <ChevronDown size={12} className="text-white/60 hover:text-white shrink-0" />
-          </div>
+            <span className="flex items-center gap-1 text-[8.5px] tracking-wider text-black bg-[#58D8D0] group-hover:bg-[#6ef5ec] font-bold px-1.5 py-0.5 shrink-0 transition-colors">
+              <span>OPEN</span>
+              <ChevronDown size={11} />
+            </span>
+          </button>
         ) : (
-          <div className="p-2.5 bg-black/90 border border-white/20 rounded-none flex flex-col gap-1 text-white/80 shadow-lg pointer-events-auto">
-            <div className="flex items-center justify-between border-b border-white/10 pb-1">
-              <span className="text-[#58D8D0] font-bold uppercase tracking-wider flex items-center gap-1 truncate">
-                <Activity size={11} className="shrink-0" /> {spacecraftProfile.name}
+          <div className="p-2.5 bg-black/90 border border-white/20 rounded-none flex flex-col gap-1 text-white/80 shadow-2xl pointer-events-auto backdrop-blur-sm">
+            <div className="flex items-center justify-between border-b border-white/10 pb-1.5 gap-2">
+              <span className="text-[#58D8D0] font-bold uppercase tracking-wider flex items-center gap-1.5 truncate">
+                <Activity size={11} className="shrink-0 text-[#58D8D0]" />
+                <span className="truncate">{spacecraftProfile.name}</span>
               </span>
-              <div className="flex items-center gap-1 shrink-0">
-                <span className="text-[8px] px-1.5 py-0.2 bg-white/10 text-white font-bold">
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="text-[8px] px-1.5 py-0.5 bg-white/10 text-white font-bold border border-white/10">
                   {(progress * 100).toFixed(1)}% TRANSIT
                 </span>
                 <button
                   type="button"
                   onClick={() => setIsDossierCollapsed(true)}
-                  className="p-0.5 text-white/50 hover:text-white cursor-pointer ml-1"
-                  title="Collapse Dossier"
+                  className="flex items-center gap-1 px-1.5 py-0.5 bg-white/10 hover:bg-rose-500/80 text-white/80 hover:text-white border border-white/20 hover:border-rose-400 cursor-pointer transition-colors text-[8.5px] font-bold tracking-wider rounded-none"
+                  title="Close Flight Details"
                 >
-                  <ChevronUp size={11} />
+                  <span>CLOSE</span>
+                  <X size={10} />
                 </button>
               </div>
             </div>
 
-            <div className="flex justify-between text-white/70">
+            <div className="flex justify-between text-white/70 pt-0.5">
               <span>MISSION PHASE:</span>
               <span className="text-white font-bold truncate max-w-[150px] text-right">{currentTelemetry.phase}</span>
             </div>
@@ -1232,6 +1239,16 @@ export const MissionTrajectoryVisualizer: React.FC<MissionTrajectoryVisualizerPr
               <span className="truncate max-w-[120px]">ORIGIN: {launchSite.name}</span>
               <span className="text-[#00FF9D] font-bold truncate max-w-[120px] text-right">DEST: {lunarDestination.name}</span>
             </div>
+
+            {/* Prominent Footer Close Button */}
+            <button
+              type="button"
+              onClick={() => setIsDossierCollapsed(true)}
+              className="mt-1 w-full py-1 text-center bg-white/5 hover:bg-white/10 border border-white/15 hover:border-white/30 text-white/70 hover:text-white text-[8px] font-mono tracking-wider flex items-center justify-center gap-1 cursor-pointer transition-colors"
+              title="Close Flight Details"
+            >
+              <X size={9} /> CLOSE DETAILS
+            </button>
           </div>
         )}
       </div>

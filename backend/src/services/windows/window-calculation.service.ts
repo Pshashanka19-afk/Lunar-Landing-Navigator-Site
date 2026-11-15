@@ -148,19 +148,27 @@ export class WindowCalculationService {
     });
     const surfaceNormalEnu = surfaceNormalAnalysis.surfaceNormalEnu;
 
+    const effectiveSiteCoords = {
+      ...req.siteCoords,
+      elevationMeters:
+        req.siteCoords.elevationMeters ??
+        horizonProfile.siteCoordinates.surfaceElevationMeters ??
+        0.0,
+    };
+
     // State evaluation helper for a single timestamp
     const evaluatePoint = async (epochUtc: string): Promise<SampledTimeSeriesPoint> => {
       const [sunEphem, earthEphem] = await Promise.all([
         ephemerisProvider.calculateTarget({
           target: 'SUN',
           epochUtc,
-          siteCoords: req.siteCoords,
+          siteCoords: effectiveSiteCoords,
           observerHeightMeters: observerHeight,
         }),
         ephemerisProvider.calculateTarget({
           target: 'EARTH',
           epochUtc,
-          siteCoords: req.siteCoords,
+          siteCoords: effectiveSiteCoords,
           observerHeightMeters: observerHeight,
         }),
       ]);

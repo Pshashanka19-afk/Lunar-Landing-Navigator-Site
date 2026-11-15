@@ -250,87 +250,87 @@ export const MultiTrackTimeline: React.FC<MultiTrackTimelineProps> = ({
           {/* Simple 4-Metric Summary Cards Including Dual Window */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 font-mono text-xs">
             {/* Card 1: Sun Visibility */}
-            <div className="p-3 bg-black/80 border border-amber-500/20 flex flex-col justify-between gap-1">
-              <div className="flex items-center justify-between">
+            <div className="p-3 bg-black/80 border border-amber-500/20 flex flex-col justify-between gap-1 rounded-none shadow-sm">
+              <div className="flex items-center justify-between border-b border-white/5 pb-1">
                 <span className="text-[10px] text-white/50 uppercase flex items-center gap-1.5 font-bold">
                   <Sun size={13} className="text-amber-400" /> SUN VISIBILITY
                 </span>
-                <span className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded ${
-                  activePoint?.sun.isVisible ? 'bg-amber-500/20 text-amber-300' : 'bg-neutral-800 text-white/50'
+                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-none tracking-wider ${
+                  activePoint?.sun.isVisible ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-neutral-800 text-white/50 border border-white/10'
                 }`}>
                   {activePoint?.sun.isVisible ? 'DAYLIGHT' : 'SHADOW'}
                 </span>
               </div>
               <div className="flex items-baseline gap-2 pt-1">
                 <span className="text-xl font-bold text-white tabular-nums">
-                  {sunHours.toFixed(1)}h
+                  {spanMode === '1_HOUR' ? `${(sunHours * 60).toFixed(0)}m` : `${sunHours.toFixed(1)}h`}
                 </span>
                 <span className="text-xs text-amber-400 font-bold">
-                  ({sunPct.toFixed(0)}%)
+                  ({sunPct.toFixed(0)}%{spanMode === '1_HOUR' ? ' of 1h' : ' of 24h'})
                 </span>
               </div>
-              <span className="text-[10px] text-white/40">
+              <span className="text-[10px] text-white/40 pt-1 border-t border-white/5 truncate">
                 Sun: <strong className="text-white">{activePoint ? `${activePoint.sun.elevationDeg > 0 ? '+' : ''}${activePoint.sun.elevationDeg.toFixed(2)}°` : '—'}</strong>
               </span>
             </div>
 
             {/* Card 2: Earth Communication Window */}
-            <div className="p-3 bg-black/80 border border-[#38BDF8]/20 flex flex-col justify-between gap-1">
-              <div className="flex items-center justify-between">
+            <div className="p-3 bg-black/80 border border-[#38BDF8]/20 flex flex-col justify-between gap-1 rounded-none shadow-sm">
+              <div className="flex items-center justify-between border-b border-white/5 pb-1">
                 <span className="text-[10px] text-white/50 uppercase flex items-center gap-1.5 font-bold">
                   <Globe size={13} className="text-[#38BDF8]" /> EARTH COMMS
                 </span>
-                <span className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded ${
-                  activePoint?.earth.isVisible ? 'bg-sky-500/20 text-[#38BDF8]' : 'bg-neutral-800 text-white/50'
+                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-none tracking-wider ${
+                  activePoint?.earth.isVisible ? 'bg-sky-500/20 text-[#38BDF8] border border-sky-500/30' : 'bg-neutral-800 text-white/50 border border-white/10'
                 }`}>
                   {activePoint?.earth.isVisible ? 'LOS OPEN' : 'OCCULTED'}
                 </span>
               </div>
               <div className="flex items-baseline gap-2 pt-1">
                 <span className="text-xl font-bold text-white tabular-nums">
-                  {earthHours.toFixed(1)}h
+                  {spanMode === '1_HOUR' ? `${(earthHours * 60).toFixed(0)}m` : `${earthHours.toFixed(1)}h`}
                 </span>
                 <span className="text-xs text-[#38BDF8] font-bold">
-                  ({earthPct.toFixed(0)}%)
+                  ({earthPct.toFixed(0)}%{spanMode === '1_HOUR' ? ' of 1h' : ' of 24h'})
                 </span>
               </div>
-              <span className="text-[10px] text-white/40">
+              <span className="text-[10px] text-white/40 pt-1 border-t border-white/5 truncate">
                 Earth: <strong className="text-white">{activePoint ? `${activePoint.earth.elevationDeg > 0 ? '+' : ''}${activePoint.earth.elevationDeg.toFixed(2)}°` : '—'}</strong>
               </span>
             </div>
 
             {/* Card 3: Dual Window (Common Meeting Branches of Sun + Earth) */}
-            <div className="p-3 bg-black/80 border border-emerald-500/20 flex flex-col justify-between gap-1">
-              <div className="flex items-center justify-between">
+            <div className="p-3 bg-black/80 border border-emerald-500/20 flex flex-col justify-between gap-1 rounded-none shadow-sm">
+              <div className="flex items-center justify-between border-b border-white/5 pb-1">
                 <span className="text-[10px] text-white/50 uppercase flex items-center gap-1.5 font-bold">
                   <Zap size={13} className="text-emerald-400" /> DUAL WINDOW
                 </span>
-                <span className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded ${
-                  activePoint?.bothVisible ? 'bg-emerald-500/20 text-emerald-300' : 'bg-neutral-800 text-white/50'
+                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-none tracking-wider ${
+                  activePoint?.bothVisible ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-neutral-800 text-white/50 border border-white/10'
                 }`}>
                   {activePoint?.bothVisible ? 'ACTIVE' : 'INACTIVE'}
                 </span>
               </div>
               <div className="flex items-baseline gap-2 pt-1">
                 <span className="text-xl font-bold text-emerald-400 tabular-nums">
-                  {dualHours.toFixed(1)}h
+                  {spanMode === '1_HOUR' ? `${(dualHours * 60).toFixed(0)}m` : `${dualHours.toFixed(1)}h`}
                 </span>
                 <span className="text-xs text-emerald-400 font-bold">
                   ({dualPct.toFixed(0)}% Both)
                 </span>
               </div>
-              <span className="text-[10px] text-white/40">
+              <span className="text-[10px] text-white/40 pt-1 border-t border-white/5 truncate">
                 Simultaneous sunlight &amp; comms
               </span>
             </div>
 
             {/* Card 4: Active Simulator Timing (Attains Image 2 Timing) */}
-            <div className="p-3 bg-black/80 border border-white/20 flex flex-col justify-between gap-1">
-              <div className="flex items-center justify-between">
+            <div className="p-3 bg-black/80 border border-white/20 flex flex-col justify-between gap-1 rounded-none shadow-sm">
+              <div className="flex items-center justify-between border-b border-white/5 pb-1">
                 <span className="text-[10px] text-white/50 uppercase flex items-center gap-1.5 font-bold">
-                  <Clock size={13} className="text-white/80" /> ACTIVE TIMING
+                  <Clock size={13} className="text-[#58D8D0]" /> ACTIVE TIMING
                 </span>
-                <span className="text-[9.5px] font-bold px-1.5 py-0.5 rounded bg-white/10 text-white">
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-none bg-[#58D8D0]/15 text-[#58D8D0] border border-[#58D8D0]/30 tracking-wider">
                   SYNCED
                 </span>
               </div>
@@ -339,7 +339,7 @@ export const MultiTrackTimeline: React.FC<MultiTrackTimelineProps> = ({
                   {formatEpochUtc(currentEpochIso)}
                 </span>
               </div>
-              <span className="text-[10px] text-white/40">
+              <span className="text-[10px] text-white/40 pt-1 border-t border-white/5 truncate">
                 Simulation cursor timestamp
               </span>
             </div>
@@ -421,7 +421,7 @@ export const MultiTrackTimeline: React.FC<MultiTrackTimelineProps> = ({
                     className="absolute top-0 bottom-0 w-[2px] bg-white z-30 shadow-[0_0_8px_white,0_0_14px_rgba(255,255,255,0.95)] pointer-events-none -translate-x-1/2 transition-[left] duration-75"
                     style={{ left: `${cursorPercent}%` }}
                   >
-                    <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-white rotate-45 shadow-[0_0_6px_white]" />
+                    <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2.5 h-1 bg-white shadow-[0_0_6px_white]" />
                   </div>
                 )}
               </div>
@@ -491,7 +491,7 @@ export const MultiTrackTimeline: React.FC<MultiTrackTimelineProps> = ({
                     className="absolute top-0 bottom-0 w-[2px] bg-white z-30 shadow-[0_0_8px_white,0_0_14px_rgba(255,255,255,0.95)] pointer-events-none -translate-x-1/2 transition-[left] duration-75"
                     style={{ left: `${cursorPercent}%` }}
                   >
-                    <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-white rotate-45 shadow-[0_0_6px_white]" />
+                    <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2.5 h-1 bg-white shadow-[0_0_6px_white]" />
                   </div>
                 )}
               </div>

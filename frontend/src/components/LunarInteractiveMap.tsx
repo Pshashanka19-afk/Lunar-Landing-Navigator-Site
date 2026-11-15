@@ -99,30 +99,6 @@ export const VISUAL_SCALE_MOON_ORBIT_R = 14.5;             // Scaled Moon orbit 
 // High-Resolution South Pole LOLA Boundary
 export const SOUTH_POLE_HIGHRES_LAT_CUTOFF = -83.0;
 
-// Prominent Lunar Landmarks for Selenographic Reference
-export interface LunarLandmark {
-  name: string;
-  lat: number;
-  lon: number;
-  region: string;
-  type?: 'mare' | 'crater' | 'pole' | 'basin';
-}
-
-export const GLOBAL_LUNAR_LANDMARKS: LunarLandmark[] = [
-  { name: 'APOLLO 11', lat: 0.67, lon: 23.47, region: 'Mare Tranquillitatis', type: 'crater' },
-  { name: 'MARE TRANQUILLITATIS', lat: 8.5, lon: 31.4, region: 'Near Side Basalt Patch', type: 'mare' },
-  { name: 'MARE SERENITATIS', lat: 28.0, lon: 17.5, region: 'Near Side Basalt Patch', type: 'mare' },
-  { name: 'MARE IMBRIUM', lat: 35.0, lon: -16.0, region: 'Near Side Giant Basin', type: 'mare' },
-  { name: 'OCEANUS PROCELLARUM', lat: 18.4, lon: -57.4, region: 'Near Side Ocean of Storms', type: 'mare' },
-  { name: 'MARE CRISIUM', lat: 17.0, lon: 59.1, region: 'Isolated Circular Mare', type: 'mare' },
-  { name: 'COPERNICUS', lat: 9.62, lon: -20.08, region: 'Terraced Crater Patch', type: 'crater' },
-  { name: 'TYCHO', lat: -43.3, lon: -11.2, region: 'Highland Ray System', type: 'crater' },
-  { name: 'ARISTARCHUS', lat: 23.7, lon: -47.4, region: 'Brightest Albedo Patch', type: 'crater' },
-  { name: 'PLATO', lat: 51.6, lon: -9.3, region: 'Dark Flat Floor Crater', type: 'crater' },
-  { name: 'SOUTH POLE-AITKEN BASIN', lat: -53.0, lon: 180.0, region: 'Far Side Giant Basin', type: 'basin' },
-  { name: 'SHACKLETON CRATER', lat: -89.78, lon: 125.40, region: 'South Pole Artemis Zone', type: 'crater' },
-  { name: 'MALAPERT MASSIF', lat: -86.04, lon: 2.70, region: 'Peak of Eternal Light', type: 'crater' },
-];
 
 export const formatSiteShortName = (name: string): string => {
   if (!name) return '';
@@ -147,7 +123,7 @@ export const formatSiteShortName = (name: string): string => {
  * on the Moon sphere (Moon local coordinate frame).
  * Lat -90 (South Pole) -> near -Y; Lon 0 (Prime Meridian) -> aligns with +Z (Earth facing).
  */
-export function selenographicToCartesian(
+function selenographicToCartesian(
   latDeg: number,
   lonDeg: number,
   radius: number = MOON_RADIUS_UNITS,
@@ -168,31 +144,18 @@ export function selenographicToCartesian(
   return v;
 }
 
-/**
- * Inverse conversion: From 3D Cartesian position on Moon sphere back to Selenographic (lat, lon).
- */
-export function cartesianToSelenographic(pos: THREE.Vector3): { latDeg: number; lonDeg: number } {
-  const p = pos.clone();
-  p.applyAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
-  const r = p.length();
-  if (r === 0) return { latDeg: 0, lonDeg: 0 };
 
-  const phi = Math.acos(Math.max(-1, Math.min(1, p.y / r)));
-  const latDeg = 90 - (phi * 180 / Math.PI);
-
-  const theta = Math.atan2(p.z, -p.x);
-  let lonDeg = (theta * 180 / Math.PI) - 180;
-  if (lonDeg < -180) lonDeg += 360;
-  if (lonDeg > 180) lonDeg -= 360;
-
-  return { latDeg, lonDeg };
-}
-
-/**
- * Converts backend MOON_ME Cartesian position (x_me, y_me, z_me) to Three.js coordinates.
- */
-export function moonMeToThree(x_me: number, y_me: number, z_me: number): THREE.Vector3 {
-  return new THREE.Vector3(y_me, z_me, x_me);
+// Computes wide overview camera offset from the Moon such that the Sun at (0,0,0),
+// Earth, and Moon orbits are all visible, while the camera strictly targets the Moon
+function getSystemOverviewOffset(moonPos: THREE.Vector3): THREE.Vector3 {
+  const rXZ = Math.hypot(moonPos.x, moonPos.z);
+  const sunToMoonDir = rXZ > 0.001 
+    ? new THREE.Vector3(moonPos.x / rXZ, 0, moonPos.z / rXZ) 
+    : new THREE.Vector3(1, 0, 0);
+  const tangentDir = new THREE.Vector3(-sunToMoonDir.z, 0, sunToMoonDir.x);
+  return sunToMoonDir.clone().multiplyScalar(75)
+    .add(tangentDir.clone().multiplyScalar(60))
+    .add(new THREE.Vector3(0, 110, 0));
 }
 
 /**
@@ -366,12 +329,6 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
   const [showAxialTilts, setShowAxialTilts] = useState<boolean>(true);
   const [showLabels, setShowLabels] = useState<boolean>(true);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const hasLoadedOnceRef = useRef<boolean>(false);
-  useEffect(() => {
-    if (!isLoading) {
-      hasLoadedOnceRef.current = true;
-    }
-  }, [isLoading]);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [hoveredSite, setHoveredSite] = useState<MapSiteItem | null>(null);
 
@@ -388,25 +345,12 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
     return worldPos;
   }, []);
 
-  // Computes wide overview camera offset from the Moon such that the Sun at (0,0,0),
-  // Earth, and Moon orbits are all visible, while the camera strictly targets the Moon
-  const getSystemOverviewOffset = useCallback((moonPos: THREE.Vector3): THREE.Vector3 => {
-    const rXZ = Math.hypot(moonPos.x, moonPos.z);
-    const sunToMoonDir = rXZ > 0.001 
-      ? new THREE.Vector3(moonPos.x / rXZ, 0, moonPos.z / rXZ) 
-      : new THREE.Vector3(1, 0, 0);
-    const tangentDir = new THREE.Vector3(-sunToMoonDir.z, 0, sunToMoonDir.x);
-    return sunToMoonDir.clone().multiplyScalar(75)
-      .add(tangentDir.clone().multiplyScalar(60))
-      .add(new THREE.Vector3(0, 110, 0));
-  }, []);
-
   // ---------------------------------------------------------------------------
   // TRUE REAL-TIME SIMULATION CLOCK STATE
   // ---------------------------------------------------------------------------
   const initialTimeMs = useMemo(() => {
     const t = new Date(`${epochDate}T${epochHour.toString().padStart(2, '0')}:00:00Z`).getTime();
-    return isNaN(t) ? Date.now() : t;
+    return isNaN(t) ? 1792065600000 : t; // Deterministic default epoch: 2026-10-14 12:00:00 UTC
   }, [epochDate, epochHour]);
 
   const [simTimeMs, setSimTimeMs] = useState<number>(initialTimeMs);
@@ -534,7 +478,9 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
 
   // Stable references for high-performance 60 FPS animation loop
   const siteAnalysisRef = useRef(siteAnalysis);
-  siteAnalysisRef.current = siteAnalysis;
+  useEffect(() => {
+    siteAnalysisRef.current = siteAnalysis;
+  }, [siteAnalysis]);
   const lastSunlightStateUpdateTimeRef = useRef<number>(0);
   const updateMarkerProjectionsRef = useRef<() => void>(() => {});
   const lastProjectedMarkerRef = useRef<{
@@ -695,9 +641,8 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
     viewer.scene.globe.depthTestAgainstTerrain = false;
 
     // Synchronize simulation time with Candidate Site Date & Hour
-    const simIso = `${epochDate}T${epochHour.toString().padStart(2, '0')}:00:00Z`;
     try {
-      const julianDate = Cesium.JulianDate.fromIso8601(simIso);
+      const julianDate = Cesium.JulianDate.fromIso8601(new Date(simTimeRef.current).toISOString());
       viewer.clock.currentTime = julianDate;
       viewer.clock.shouldAnimate = false;
     } catch {
@@ -1615,7 +1560,6 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
 
   useEffect(() => {
     updateMarkerProjectionsRef.current = updateMarkerProjections;
-    updateMarkerProjections();
   }, [updateMarkerProjections]);
 
   // ---------------------------------------------------------------------------
@@ -2130,7 +2074,7 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
       ease: 'power2.inOut',
       onUpdate: () => controls.update(),
     });
-  }, [getMoonWorldPosition, getSystemOverviewOffset]);
+  }, [getMoonWorldPosition]);
 
   const handleStepZoom = useCallback((factor: number) => {
     if (!cameraRef.current || !controlsRef.current) return;
@@ -2219,8 +2163,51 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
     prevSelectedSiteIdRef.current = selectedSiteId;
     const targetSite = sites.find((s) => s.id === selectedSiteId);
     if (!targetSite) return;
-    handleFocusCandidateSite(targetSite);
-  }, [selectedSiteId, sites, handleFocusCandidateSite]);
+
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!camera || !controls) return;
+
+    const moonPos = getMoonWorldPosition();
+    setCameraFocusTarget('MOON');
+    gsap.killTweensOf(camera.position);
+    gsap.killTweensOf(controls.target);
+
+    if (moonGroupRef.current) {
+      moonGroupRef.current.updateWorldMatrix(true, true);
+    }
+
+    const siteLocal = selenographicToCartesian(targetSite.latitudeDeg, targetSite.longitudeDeg, MOON_RADIUS_UNITS, targetSite.elevationMeters || 0);
+    const siteWorld = siteLocal.clone();
+    if (moonTiltGroupRef.current) {
+      siteWorld.applyMatrix4(moonTiltGroupRef.current.matrixWorld);
+    } else {
+      siteWorld.add(moonPos);
+    }
+
+    const normal = siteWorld.clone().sub(moonPos).normalize();
+    const camOffset = normal.clone().multiplyScalar(2.1);
+    const camPos = moonPos.clone().add(camOffset);
+
+    gsap.to(controls.target, {
+      x: moonPos.x,
+      y: moonPos.y,
+      z: moonPos.z,
+      duration: 1.2,
+      ease: 'power2.inOut',
+    });
+    gsap.to(camera.position, {
+      x: camPos.x,
+      y: camPos.y,
+      z: camPos.z,
+      duration: 1.2,
+      ease: 'power2.inOut',
+      onUpdate: () => {
+        controls.update();
+        updateMarkerProjectionsRef.current?.();
+      },
+    });
+  }, [selectedSiteId, sites, getMoonWorldPosition]);
 
   // ---------------------------------------------------------------------------
   // Dynamic Date & Time Popover State & Handlers
@@ -2509,7 +2496,7 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
           onToggleLabels={() => setShowLabels((prev) => !prev)}
           isFullscreen={isFullscreen}
           onToggleFullscreen={toggleFullscreen}
-          isLoading={isLoading && !hasLoadedOnceRef.current}
+          isLoading={isLoading}
         />
 
         <SimulationConfigToolbar
@@ -2518,7 +2505,7 @@ const LunarInteractiveMapComponent: React.FC<LunarInteractiveMapProps> = ({
           onSelectSite={(site) => handleFocusCandidateSite(site)}
           activeLayer={activeLayer}
           onSelectLayer={(layer) => setActiveLayer(layer)}
-          isLoading={isLoading && !hasLoadedOnceRef.current}
+          isLoading={isLoading}
         />
       </div>
 

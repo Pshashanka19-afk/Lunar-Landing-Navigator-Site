@@ -177,20 +177,18 @@ export const SimulationConfigToolbar: React.FC<SimulationConfigToolbarProps> = R
             type="button"
             onClick={() => onSelectLayer('MOON_TREK_LOLA')}
             title="NASA Moon Trek LOLA Global Color Altimetry Hillshade (237m/px)"
-            className={`px-2.5 h-6 flex items-center justify-center gap-1.5 text-[9px] font-mono uppercase font-bold tracking-wider transition-all cursor-pointer rounded-none shrink-0 ${
+            className={`w-[124px] h-6 flex items-center justify-center gap-1.5 text-[9px] font-mono uppercase font-bold tracking-wider transition-all cursor-pointer rounded-none shrink-0 ${
               activeLayer === 'MOON_TREK_LOLA'
-                ? 'bg-gradient-to-r from-blue-600 via-emerald-400 to-amber-300 text-black font-extrabold border border-amber-300 shadow-[0_0_12px_rgba(52,211,153,0.5)]'
-                : 'text-white/70 hover:text-white hover:bg-white/10 border border-transparent'
+                ? 'bg-[#ECC068] text-black font-extrabold border border-[#ECC068] shadow-[0_0_10px_rgba(236,192,104,0.35)]'
+                : 'text-white/60 hover:text-white hover:bg-white/10 border border-transparent'
             }`}
           >
             <span
-              className={`w-2 h-2 rounded-full shrink-0 transition-transform ${
-                activeLayer === 'MOON_TREK_LOLA'
-                  ? 'bg-black scale-110'
-                  : 'bg-gradient-to-tr from-purple-500 via-emerald-400 to-amber-300'
+              className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                activeLayer === 'MOON_TREK_LOLA' ? 'bg-black' : 'bg-[#ECC068]'
               }`}
             />
-            LOLA Color Altimetry
+            LOLA Altimetry
           </button>
           <button
             type="button"
