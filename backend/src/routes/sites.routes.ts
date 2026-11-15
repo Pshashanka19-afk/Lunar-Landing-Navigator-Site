@@ -9,6 +9,8 @@ router.get('/defaults', SitesController.getDefaultSites);
 router.post('/validate', SitesController.validateSite);
 router.post('/compare', SitesController.compareSites);
 router.post('/analysis', SitesController.getSiteAnalysis);
+router.post('/illumination/evaluate', SitesController.evaluateIllumination);
+router.get('/candidate-sites', SitesController.getDefaultSites);
 router.get('/:id', SitesController.getSiteById);
 
 export default router;

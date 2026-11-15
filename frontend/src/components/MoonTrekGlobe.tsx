@@ -5,11 +5,9 @@ import {
   Globe, 
   Layers, 
   Compass, 
-  Crosshair, 
   ZoomIn, 
   ZoomOut, 
   RotateCcw, 
-  MapPin, 
   Sun
 } from 'lucide-react';
 import { type MapSiteItem } from './LunarInteractiveMap';
@@ -40,17 +38,6 @@ export const MoonTrekGlobe: React.FC<MoonTrekGlobeProps> = ({
   const [layers, setLayers] = useState<MoonTrekLayerMetadata[]>([]);
   const [activeLayerId, setActiveLayerId] = useState<string>('LRO_WAC_Mosaic_Global_303ppd_v02');
   const [isInitializing, setIsInitializing] = useState<boolean>(true);
-  const [telemetry, setTelemetry] = useState<{
-    lat: number;
-    lon: number;
-    altKm: number;
-    heading: number;
-  }>({
-    lat: -90.0,
-    lon: 0.0,
-    altKm: 350.0,
-    heading: 0,
-  });
   const [sunLightingEnabled, setSunLightingEnabled] = useState<boolean>(true);
 
   // Load NASA Moon Trek layer catalog
@@ -149,24 +136,10 @@ export const MoonTrekGlobe: React.FC<MoonTrekGlobeProps> = ({
       },
     });
 
-    // Camera movement listener for telemetry HUD
-    const removeCameraListener = viewer.camera.changed.addEventListener(() => {
-      const cartographic = lunarEllipsoid.cartesianToCartographic(viewer.camera.position);
-      if (cartographic) {
-        setTelemetry({
-          lat: Cesium.Math.toDegrees(cartographic.latitude),
-          lon: Cesium.Math.toDegrees(cartographic.longitude),
-          altKm: Math.round(cartographic.height / 1000),
-          heading: Math.round(Cesium.Math.toDegrees(viewer.camera.heading)),
-        });
-      }
-    });
-
     setIsInitializing(false);
 
     // Cleanup on unmount
     return () => {
-      removeCameraListener();
       if (!viewer.isDestroyed()) {
         viewer.destroy();
       }
@@ -248,52 +221,44 @@ export const MoonTrekGlobe: React.FC<MoonTrekGlobeProps> = ({
     });
     siteEntitiesRef.current.clear();
 
-    sites.forEach((site) => {
-      const isSelected = site.id === selectedSiteId;
-      const pinColor = isSelected
-        ? Cesium.Color.fromCssColorString('#00FF9D')
-        : site.id.includes('shackleton')
-        ? Cesium.Color.fromCssColorString('#58D8D0')
-        : site.id.includes('malapert')
-        ? Cesium.Color.fromCssColorString('#ECC068')
-        : site.id.includes('gerlache')
-        ? Cesium.Color.fromCssColorString('#78F5EC')
-        : Cesium.Color.fromCssColorString('#FFB3B0');
+    // Only add a Cesium entity for the currently selected site.
+    // This prevents overlapping labels/pins when all 20 sites would otherwise be shown.
+    const selectedSite = sites.find((s) => s.id === selectedSiteId);
+    if (!selectedSite) return;
 
-      const position = Cesium.Cartesian3.fromDegrees(
-        site.longitudeDeg,
-        site.latitudeDeg,
-        site.elevationMeters || 0,
-        lunarEllipsoid
-      );
+    const position = Cesium.Cartesian3.fromDegrees(
+      selectedSite.longitudeDeg,
+      selectedSite.latitudeDeg,
+      selectedSite.elevationMeters || 0,
+      lunarEllipsoid
+    );
 
-      // Create landing site pin with 3D beacon line and label
-      const entity = viewer.entities.add({
-        id: site.id,
-        name: site.name,
-        position: position,
-        point: {
-          pixelSize: isSelected ? 14 : 10,
-          color: pinColor,
-          outlineColor: Cesium.Color.WHITE,
-          outlineWidth: 2,
-          disableDepthTestDistance: 500000.0,
-        },
-        label: {
-          text: ` ${site.name.toUpperCase()} \n [${typeof site.latitudeDeg === 'number' ? Math.abs(site.latitudeDeg).toFixed(2) : '89.50'}°S, ${typeof site.longitudeDeg === 'number' ? site.longitudeDeg.toFixed(2) : '0.00'}°E]`,
-          font: '12px "Space Mono", monospace',
-          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-          fillColor: isSelected ? Cesium.Color.fromCssColorString('#00FF9D') : Cesium.Color.WHITE,
-          outlineColor: Cesium.Color.BLACK,
-          outlineWidth: 3,
-          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-          pixelOffset: new Cesium.Cartesian2(0, -14),
-          disableDepthTestDistance: 500000.0,
-        },
-      });
-
-      siteEntitiesRef.current.set(site.id, entity);
+    // Create landing site pin with 3D beacon line and label (selected site only)
+    const entity = viewer.entities.add({
+      id: selectedSite.id,
+      name: selectedSite.name,
+      position: position,
+      point: {
+        pixelSize: 14,
+        color: Cesium.Color.fromCssColorString('#00FF9D'),
+        outlineColor: Cesium.Color.BLACK,
+        outlineWidth: 2,
+        disableDepthTestDistance: 500000.0,
+      },
+      label: {
+        text: ` ${selectedSite.name.toUpperCase()} \n [${typeof selectedSite.latitudeDeg === 'number' ? Math.abs(selectedSite.latitudeDeg).toFixed(2) : '89.50'}°S, ${typeof selectedSite.longitudeDeg === 'number' ? selectedSite.longitudeDeg.toFixed(2) : '0.00'}°E] [ACTIVE]`,
+        font: 'bold 12px "Space Mono", monospace',
+        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+        fillColor: Cesium.Color.fromCssColorString('#00FF9D'),
+        outlineColor: Cesium.Color.BLACK,
+        outlineWidth: 3,
+        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+        pixelOffset: new Cesium.Cartesian2(0, -14),
+        disableDepthTestDistance: 500000.0,
+      },
     });
+
+    siteEntitiesRef.current.set(selectedSite.id, entity);
 
     // Screen-space click handler for site selection
     const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
@@ -420,6 +385,23 @@ export const MoonTrekGlobe: React.FC<MoonTrekGlobeProps> = ({
           </span>
         </div>
 
+        {/* Candidate Landing Site Selector */}
+        <div className="flex items-center gap-1.5 bg-[#0c131c]/90 border border-slate-700/80 px-2 py-1 rounded backdrop-blur">
+          <Compass className="w-3.5 h-3.5 text-[#58D8D0]" />
+          <select
+            value={selectedSiteId}
+            onChange={(e) => onSelectSite(e.target.value)}
+            className="bg-transparent text-xs font-mono text-slate-200 outline-none cursor-pointer pr-1 max-w-[200px] truncate"
+            title="Navigate Moon Trek Globe to Selected Candidate Landing Site"
+          >
+            {sites.map((s) => (
+              <option key={s.id} value={s.id} className="bg-[#0c131c] text-slate-200">
+                SITE: {s.name} ({Math.abs(s.latitudeDeg).toFixed(1)}°S)
+              </option>
+            ))}
+          </select>
+        </div>
+
         {/* Layer Selector */}
         <div className="flex items-center gap-1.5 bg-[#0c131c]/90 border border-slate-700/80 px-2 py-1 rounded backdrop-blur">
           <Layers className="w-3.5 h-3.5 text-slate-400" />
@@ -483,46 +465,11 @@ export const MoonTrekGlobe: React.FC<MoonTrekGlobeProps> = ({
         </button>
       </div>
 
-      {/* Bottom Telemetry HUD Bar */}
-      <div className="absolute bottom-4 left-4 right-4 z-20 flex flex-wrap items-center justify-between gap-3 pointer-events-none">
-        {/* Coordinates Telemetry */}
-        <div className="flex items-center gap-4 bg-[#080d14]/90 border border-slate-700/80 px-3.5 py-2 rounded backdrop-blur text-xs font-mono pointer-events-auto">
-          <div className="flex items-center gap-1.5 text-slate-300">
-            <Crosshair className="w-3.5 h-3.5 text-emerald-400" />
-            <span className="text-slate-400">LAT:</span>
-            <span className="text-emerald-400 font-semibold">{telemetry.lat.toFixed(2)}°</span>
-          </div>
-          <div className="flex items-center gap-1.5 text-slate-300">
-            <span className="text-slate-400">LON:</span>
-            <span className="text-emerald-400 font-semibold">{telemetry.lon.toFixed(2)}°</span>
-          </div>
-          <div className="flex items-center gap-1.5 text-slate-300">
-            <span className="text-slate-400">ALT:</span>
-            <span className="text-cyan-300 font-semibold">{telemetry.altKm} km</span>
-          </div>
-          <div className="hidden sm:flex items-center gap-1.5 text-slate-400">
-            <span>HDG:</span>
-            <span className="text-slate-200">{telemetry.heading}°</span>
-          </div>
-        </div>
-
-        {/* Selected Landing Site Pill */}
-        {selectedSiteId && (
-          <div className="flex items-center gap-2 bg-[#080d14]/90 border border-emerald-500/40 px-3.5 py-2 rounded backdrop-blur text-xs font-mono pointer-events-auto">
-            <MapPin className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-            <span className="text-slate-400">SITE:</span>
-            <span className="text-emerald-300 font-bold">
-              {sites.find((s) => s.id === selectedSiteId)?.name || selectedSiteId}
-            </span>
-          </div>
-        )}
-
-        {/* Service Attribution Footer */}
-        <div className="hidden lg:flex items-center gap-2 bg-[#080d14]/80 border border-slate-800 px-3 py-1.5 rounded text-[11px] font-mono text-slate-400 pointer-events-auto">
-          <span>DATA: NASA JPL / GSFC / ASU LROC / LOLA</span>
-          <span className="text-slate-600">•</span>
-          <span>ENGINE: CesiumJS</span>
-        </div>
+      {/* Service Attribution Footer */}
+      <div className="absolute bottom-4 right-4 z-20 hidden lg:flex items-center gap-2 bg-[#080d14]/80 border border-slate-800 px-3 py-1.5 rounded text-[11px] font-mono text-slate-400 pointer-events-auto">
+        <span>DATA: NASA JPL / GSFC / ASU LROC / LOLA</span>
+        <span className="text-slate-600">•</span>
+        <span>ENGINE: CesiumJS</span>
       </div>
     </div>
   );

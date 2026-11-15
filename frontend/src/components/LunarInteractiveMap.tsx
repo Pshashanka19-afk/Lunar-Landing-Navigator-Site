@@ -5,16 +5,18 @@ import gsap from 'gsap';
 import * as Cesium from 'cesium';
 import 'cesium/Build/Cesium/Widgets/widgets.css';
 import { 
-  Globe, 
   RotateCcw, 
-  Sun, 
   Play, 
   Pause, 
   Radio, 
   Clock, 
   Sliders, 
   RefreshCw, 
-  AlertTriangle
+  AlertTriangle,
+  Calendar,
+  ChevronUp,
+  X,
+  Check
 } from 'lucide-react';
 import { lunarApi, type SiteAnalysisData, type MoonTrekLayerMetadata } from '../services/lunarApi';
 import { SimulationControlToolbar } from './SimulationControlToolbar';
@@ -29,6 +31,12 @@ export interface MapSiteItem {
   isDemCovered?: boolean;
   pinColor?: string;
   isCustom?: boolean;
+  siteType?: string;
+  targetRegion?: string;
+  description?: string;
+  source?: string;
+  coordinateReference?: string;
+  uncertaintyKm?: number;
 }
 
 // Retained type exports for backward compatibility across other components
@@ -56,6 +64,7 @@ interface LunarInteractiveMapProps {
   epochDate?: string;
   epochHour?: number;
   onSimulationEpochChange?: (isoUtc: string) => void;
+  onEpochDateChange?: (date: string, hour: number) => void;
   initialCelestialMode?: CelestialViewMode;
   isAnalyzing?: boolean;
   analysisError?: string | null;
@@ -117,12 +126,20 @@ export const GLOBAL_LUNAR_LANDMARKS: LunarLandmark[] = [
 
 export const formatSiteShortName = (name: string): string => {
   if (!name) return '';
-  const lower = name.toLowerCase();
-  if (lower.startsWith('de gerlache')) return 'de Gerlache';
-  if (lower.startsWith('malapert')) return 'Malapert';
-  if (lower.startsWith('shackleton')) return 'Shackleton';
-  if (lower.startsWith('haworth')) return 'Haworth';
-  return name.replace(' Crater Ridge', '').replace(' Crater Rim', '').replace(' Massif', '');
+  return name
+    .replace(' Crater - Connecting Ridge', ' Conn. Ridge')
+    .replace(' Crater Rim 1', ' Rim 1')
+    .replace(' Crater Rim 2', ' Rim 2')
+    .replace(' Crater Rim', ' Rim')
+    .replace(' (Peak)', '')
+    .replace(' (MMO01)', '')
+    .replace(' (MMO02)', '')
+    .replace(' (Site SP07)', '')
+    .replace(' (Artemis Candidate Region)', '')
+    .replace(' (NASA PRIME-1 / CLPS IM-2)', ' (PRIME-1)')
+    .replace(' (CLPS IM-1 Odysseus)', ' (IM-1)')
+    .replace(' (Chandrayaan-3)', ' (CH-3)')
+    .replace(' Crater', '');
 };
 
 /**
@@ -279,6 +296,7 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
   epochDate = '2026-10-14',
   epochHour = 12,
   onSimulationEpochChange,
+  onEpochDateChange,
   isAnalyzing = false,
   analysisError = null,
   onSwitchToMoonTrek: _onSwitchToMoonTrek,
@@ -347,7 +365,6 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
   const [showOrbits, setShowOrbits] = useState<boolean>(true);
   const [showAxialTilts, setShowAxialTilts] = useState<boolean>(true);
   const [showLabels, setShowLabels] = useState<boolean>(true);
-  const [showHud, setShowHud] = useState<boolean>(true);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const hasLoadedOnceRef = useRef<boolean>(false);
   useEffect(() => {
@@ -357,9 +374,6 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
   }, [isLoading]);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [hoveredSite, setHoveredSite] = useState<MapSiteItem | null>(null);
-
-  // Camera Distance & Zoom Range Telemetry
-  const [cameraDistanceToTarget, setCameraDistanceToTarget] = useState<number>(3.2);
 
   // Helper to obtain Moon's exact current world-space position in Sun-centric space
   const getMoonWorldPosition = useCallback((): THREE.Vector3 => {
@@ -403,8 +417,6 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
   const [customSpeed, setCustomSpeed] = useState<number>(3600);
   const [showCustomSpeed, setShowCustomSpeed] = useState<boolean>(false);
   const [showAdvancedSpeeds, setShowAdvancedSpeeds] = useState<boolean>(false);
-  const [lastEphemSyncTime, setLastEphemSyncTime] = useState<string>('NASA SPICE DE440');
-  const [isExactSample, setIsExactSample] = useState<boolean>(true);
 
   // Synchronized refs for high-frequency 60 FPS animation loop without re-triggering effect
   const isLiveRef = useRef<boolean>(isLive);
@@ -473,205 +485,6 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
     setIsLive(false); // Candidate Site date selection drives simulation
   }, [epochDate, epochHour]);
 
-  // Real-Time Ephemeris Distances & Planetary Parameters (from backend SPICE/IAU)
-  const [sunEarthDistanceKm, setSunEarthDistanceKm] = useState<number>(149597870);
-  const [earthMoonDistanceKm, setEarthMoonDistanceKm] = useState<number>(384400);
-
-  // STEM Astronomical Mechanics State
-  const [celestialMechanics, setCelestialMechanics] = useState<{
-    phaseName: string;
-    phaseIcon: string;
-    phaseAngleDeg: number;
-    illuminationPct: number;
-    synodicDay: number;
-    seasonNorth: string;
-    seasonSouth: string;
-    tideType: string;
-    tideExplanation: string;
-    sunTiltDeg: number;
-    earthTiltDeg: number;
-    moonTiltDeg: number;
-    moonOrbitTiltDeg: number;
-  }>({
-    phaseName: 'FULL MOON',
-    phaseIcon: '🌕',
-    phaseAngleDeg: 180,
-    illuminationPct: 100,
-    synodicDay: 14.8,
-    seasonNorth: 'AUTUMN (EQUINOX)',
-    seasonSouth: 'SPRING',
-    tideType: 'SPRING TIDE (MAXIMUM RANGE)',
-    tideExplanation: 'Sun, Earth, and Moon are aligned (syzygy), causing maximum gravitational tide.',
-    sunTiltDeg: SUN_AXIAL_TILT_DEG,
-    earthTiltDeg: EARTH_AXIAL_TILT_DEG,
-    moonTiltDeg: MOON_AXIAL_TILT_DEG,
-    moonOrbitTiltDeg: MOON_ORBIT_INCLINATION_DEG,
-  });
-
-  // Authoritative STEM Astronomical Mechanics for Selected Mission Epoch (Strictly read-only during playback)
-  useEffect(() => {
-    const epochMs = new Date(`${epochDate}T${epochHour.toString().padStart(2, '0')}:00:00Z`).getTime();
-    if (isNaN(epochMs)) return;
-
-    const jd = 2440587.5 + epochMs / 86400000.0;
-    const T = (jd - 2451545.0) / 36525.0;
-
-    const L0 = ((280.46646 + 36000.76983 * T) % 360 + 360) % 360;
-    const M0 = ((357.52911 + 35999.05029 * T) % 360 + 360) % 360;
-    const radM0 = (M0 * Math.PI) / 180;
-    const C_deg =
-      (1.914602 - 0.004817 * T) * Math.sin(radM0) +
-      (0.019993 - 0.000101 * T) * Math.sin(2 * radM0) +
-      0.000289 * Math.sin(3 * radM0);
-    const sunGeocentricLonDeg = ((L0 + C_deg) % 360 + 360) % 360;
-    const earthHeliocentricLonRad = ((sunGeocentricLonDeg + 180.0) * Math.PI) / 180;
-
-    const e_earth = 0.016708634 - 0.000042037 * T;
-    const v_earth = radM0 + (C_deg * Math.PI) / 180;
-    const R_earthAU = (1.000001018 * (1 - e_earth * e_earth)) / (1 + e_earth * Math.cos(v_earth));
-    const sunEarthDistMeters = R_earthAU * 149597870700;
-
-    const currentEarthOrbitR = VISUAL_SCALE_EARTH_ORBIT_R * R_earthAU;
-    const posEarthSolar = new THREE.Vector3(
-      currentEarthOrbitR * Math.cos(earthHeliocentricLonRad),
-      0,
-      currentEarthOrbitR * Math.sin(earthHeliocentricLonRad)
-    );
-
-    const Lp = ((218.3164477 + 481267.88123421 * T) % 360 + 360) % 360;
-    const D = ((297.8501921 + 445267.11140340 * T) % 360 + 360) % 360;
-    const M_lunar = ((357.5291092 + 35999.05029090 * T) % 360 + 360) % 360;
-    const Mp = ((134.9633964 + 477198.86750550 * T) % 360 + 360) % 360;
-    const F = ((93.2720950 + 483202.01752330 * T) % 360 + 360) % 360;
-
-    const radD = (D * Math.PI) / 180;
-    const radM = (M_lunar * Math.PI) / 180;
-    const radMp = (Mp * Math.PI) / 180;
-    const radF = (F * Math.PI) / 180;
-
-    const deltaLonDeg =
-      6.288774 * Math.sin(radMp) +
-      1.274027 * Math.sin(2 * radD - radMp) +
-      0.658314 * Math.sin(2 * radD) +
-      0.213618 * Math.sin(2 * radMp) -
-      0.185116 * Math.sin(radM) -
-      0.114332 * Math.sin(2 * radF);
-
-    const deltaLatDeg =
-      5.128154 * Math.sin(radF) +
-      0.280602 * Math.sin(radMp + radF) +
-      0.277693 * Math.sin(radMp - radF) +
-      0.173237 * Math.sin(2 * radD - radF);
-
-    const rMoonKm =
-      385000.56 -
-      20905.355 * Math.cos(radMp) -
-      3699.111 * Math.cos(2 * radD - radMp) -
-      2955.968 * Math.cos(2 * radD) -
-      569.925 * Math.cos(2 * radMp);
-    const earthMoonDistMeters = rMoonKm * 1000;
-
-    setSunEarthDistanceKm(Math.round(sunEarthDistMeters / 1000));
-    setEarthMoonDistanceKm(Math.round(earthMoonDistMeters / 1000));
-
-    const moonEclipticLonRad = (((Lp + deltaLonDeg) % 360 + 360) * Math.PI) / 180;
-    const moonEclipticLatRad = (deltaLatDeg * Math.PI) / 180;
-    const currentMoonOrbitR = VISUAL_SCALE_MOON_ORBIT_R * (rMoonKm / 384400.0);
-
-    const moonRelEarthVec = new THREE.Vector3(
-      currentMoonOrbitR * Math.cos(moonEclipticLatRad) * Math.cos(moonEclipticLonRad),
-      currentMoonOrbitR * Math.sin(moonEclipticLatRad),
-      currentMoonOrbitR * Math.cos(moonEclipticLatRad) * Math.sin(moonEclipticLonRad)
-    );
-    const posMoonSolar = posEarthSolar.clone().add(moonRelEarthVec);
-
-    const dirToSun = new THREE.Vector3(0, 0, 0).sub(posEarthSolar).normalize();
-    const dirToMoon = posMoonSolar.clone().sub(posEarthSolar).normalize();
-    const dotSM = THREE.MathUtils.clamp(dirToSun.dot(dirToMoon), -1, 1);
-    const crossSM = new THREE.Vector3().crossVectors(dirToSun, dirToMoon);
-    let synodicAngleDeg = THREE.MathUtils.radToDeg(Math.acos(dotSM));
-    if (crossSM.y < 0) synodicAngleDeg = 360 - synodicAngleDeg;
-
-    const illuminationPct = Math.round(((1 - Math.cos(THREE.MathUtils.degToRad(synodicAngleDeg))) / 2) * 100);
-    const synodicDay = Number(((synodicAngleDeg / 360) * 29.53059).toFixed(1));
-
-    let phaseName = 'NEW MOON';
-    let phaseIcon = '🌑';
-    if (synodicAngleDeg >= 348.75 || synodicAngleDeg < 11.25) {
-      phaseName = 'NEW MOON';
-      phaseIcon = '🌑';
-    } else if (synodicAngleDeg >= 11.25 && synodicAngleDeg < 78.75) {
-      phaseName = 'WAXING CRESCENT';
-      phaseIcon = '🌒';
-    } else if (synodicAngleDeg >= 78.75 && synodicAngleDeg < 101.25) {
-      phaseName = 'FIRST QUARTER';
-      phaseIcon = '🌓';
-    } else if (synodicAngleDeg >= 101.25 && synodicAngleDeg < 168.75) {
-      phaseName = 'WAXING GIBBOUS';
-      phaseIcon = '🌔';
-    } else if (synodicAngleDeg >= 168.75 && synodicAngleDeg < 191.25) {
-      phaseName = 'FULL MOON';
-      phaseIcon = '🌕';
-    } else if (synodicAngleDeg >= 191.25 && synodicAngleDeg < 258.75) {
-      phaseName = 'WANING GIBBOUS';
-      phaseIcon = '🌖';
-    } else if (synodicAngleDeg >= 258.75 && synodicAngleDeg < 281.25) {
-      phaseName = 'THIRD QUARTER';
-      phaseIcon = '🌗';
-    } else {
-      phaseName = 'WANING CRESCENT';
-      phaseIcon = '🌘';
-    }
-
-    let tideType = 'TRANSITIONAL TIDE';
-    let tideExplanation = 'Moderate gravitational alignment between Sun, Earth, and Moon.';
-    const alignmentDelta = Math.min(Math.abs(synodicAngleDeg - 0), Math.abs(synodicAngleDeg - 180), Math.abs(synodicAngleDeg - 360));
-    const quadratureDelta = Math.min(Math.abs(synodicAngleDeg - 90), Math.abs(synodicAngleDeg - 270));
-
-    if (alignmentDelta <= 24.0) {
-      tideType = 'SPRING TIDE (MAX RANGE)';
-      tideExplanation = 'Sun, Earth, and Moon in syzygy produce maximum tidal range.';
-    } else if (quadratureDelta <= 24.0) {
-      tideType = 'NEAP TIDE (MIN RANGE)';
-      tideExplanation = 'Sun and Moon at 90° quadrature partially cancel gravitational bulge.';
-    }
-
-    const simDate = new Date(epochMs);
-    const startOfYear = new Date(Date.UTC(simDate.getUTCFullYear(), 0, 1));
-    const dayOfYear = Math.floor((simDate.getTime() - startOfYear.getTime()) / 86400000);
-    let seasonNorth = 'SPRING (TRANSITION)';
-    let seasonSouth = 'AUTUMN (TRANSITION)';
-    if (dayOfYear >= 79 && dayOfYear < 172) {
-      seasonNorth = 'SPRING (TILT SHIFTING NORTH)';
-      seasonSouth = 'AUTUMN (TILT SHIFTING SOUTH)';
-    } else if (dayOfYear >= 172 && dayOfYear < 265) {
-      seasonNorth = 'SUMMER (NORTH TILTED TO SUN)';
-      seasonSouth = 'WINTER (SOUTH TILTED AWAY)';
-    } else if (dayOfYear >= 265 && dayOfYear < 355) {
-      seasonNorth = 'AUTUMN (EQUINOX SHIFT)';
-      seasonSouth = 'SPRING (EQUINOX SHIFT)';
-    } else {
-      seasonNorth = 'WINTER (NORTH TILTED AWAY)';
-      seasonSouth = 'SUMMER (SOUTH TILTED TO SUN)';
-    }
-
-    setCelestialMechanics({
-      phaseName,
-      phaseIcon,
-      phaseAngleDeg: Math.round(synodicAngleDeg),
-      illuminationPct,
-      synodicDay,
-      seasonNorth,
-      seasonSouth,
-      tideType,
-      tideExplanation,
-      sunTiltDeg: SUN_AXIAL_TILT_DEG,
-      earthTiltDeg: EARTH_AXIAL_TILT_DEG,
-      moonTiltDeg: MOON_AXIAL_TILT_DEG,
-      moonOrbitTiltDeg: MOON_ORBIT_INCLINATION_DEG,
-    });
-  }, [epochDate, epochHour]);
-
   // SPICE Ephemeris Anchor Reference (Dual-sample NLERP interpolation)
   const ephemAnchorRef = useRef<{
     sample0: {
@@ -699,11 +512,6 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
     isFetching: false,
   });
 
-  // Current Active Selected Site
-  const currentActiveSite = useMemo(() => {
-    return sites.find((s) => s.id === selectedSiteId) || sites[0] || null;
-  }, [sites, selectedSiteId]);
-
   // Screen projections for 2D HTML/SVG markers overlay on Moon surface
   const [projectedMarkers, setProjectedMarkers] = useState<
     Array<{
@@ -714,6 +522,26 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
       isSelected: boolean;
     }>
   >([]);
+
+  // Stable references for high-performance 60 FPS animation loop
+  const siteAnalysisRef = useRef(siteAnalysis);
+  siteAnalysisRef.current = siteAnalysis;
+  const lastSunlightStateUpdateTimeRef = useRef<number>(0);
+  const lastMarkerUpdateTimeRef = useRef<number>(0);
+  const updateMarkerProjectionsRef = useRef<() => void>(() => {});
+
+  // Live topocentric sunlight simulation state evaluated continuously at selected landing site
+  const [liveSunlightStatus, setLiveSunlightStatus] = useState<{
+    isIlluminated: boolean;
+    solarElevationDeg: number;
+    incidenceAngleDeg: number;
+    statusText: string;
+  }>({
+    isIlluminated: true,
+    solarElevationDeg: 1.5,
+    incidenceAngleDeg: 88.5,
+    statusText: 'ILLUMINATED',
+  });
 
   // Textures Cache Ref
   const texturesRef = useRef<{
@@ -775,9 +603,6 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
         earthPosME: new THREE.Vector3(ep.x + vEarth.x * dt, ep.y + vEarth.y * dt, ep.z + vEarth.z * dt),
       };
 
-      setLastEphemSyncTime(`SPICE DE440 • ${new Date(epochMs).toISOString().substring(11, 19)} UTC`);
-      setIsExactSample(true);
-      setTimeout(() => setIsExactSample(false), 3000);
     }
   }, [siteAnalysis, initialTimeMs]);
 
@@ -887,59 +712,48 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
 
     viewer.entities.removeAll();
 
+    // Only add a Cesium entity for the currently selected site.
+    // This prevents overlapping labels/pins in the embedded Cesium overlay.
+    const selectedSite = sites.find((s) => s.id === selectedSiteId);
+    if (!selectedSite) return;
+
     const lunarEllipsoid = new Cesium.Ellipsoid(
       LUNAR_MEAN_RADIUS_METERS,
       LUNAR_MEAN_RADIUS_METERS,
       LUNAR_MEAN_RADIUS_METERS
     );
 
-    sites.forEach((site) => {
-      const isSelected = site.id === selectedSiteId;
-      const isCompared = _selectedForCompare?.includes(site.id);
-      const pinColor = isSelected
-        ? Cesium.Color.fromCssColorString('#00FF9D')
-        : isCompared
-        ? Cesium.Color.fromCssColorString('#58D8D0')
-        : site.id.includes('shackleton')
-        ? Cesium.Color.fromCssColorString('#58D8D0')
-        : site.id.includes('malapert')
-        ? Cesium.Color.fromCssColorString('#ECC068')
-        : site.id.includes('gerlache')
-        ? Cesium.Color.fromCssColorString('#78F5EC')
-        : Cesium.Color.fromCssColorString('#FFB3B0');
+    const position = Cesium.Cartesian3.fromDegrees(
+      selectedSite.longitudeDeg,
+      selectedSite.latitudeDeg,
+      selectedSite.elevationMeters || 0,
+      lunarEllipsoid
+    );
 
-      const position = Cesium.Cartesian3.fromDegrees(
-        site.longitudeDeg,
-        site.latitudeDeg,
-        site.elevationMeters || 0,
-        lunarEllipsoid
-      );
-
-      viewer.entities.add({
-        id: site.id,
-        name: site.name,
-        position: position,
-        point: {
-          pixelSize: isSelected ? 14 : isCompared ? 10 : 8,
-          color: pinColor,
-          outlineColor: isSelected ? Cesium.Color.BLACK : Cesium.Color.WHITE,
-          outlineWidth: 2,
-          disableDepthTestDistance: 500000.0,
-        },
-        label: {
-          text: ` ${formatSiteShortName(site.name)}${isSelected ? ' [ACTIVE]' : isCompared ? ' [COMPARE]' : ''} `,
-          font: isSelected ? 'bold 12px "Space Mono", monospace' : '11px "Space Mono", monospace',
-          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-          fillColor: isSelected ? Cesium.Color.fromCssColorString('#00FF9D') : Cesium.Color.WHITE,
-          outlineColor: Cesium.Color.BLACK,
-          outlineWidth: 2,
-          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-          pixelOffset: new Cesium.Cartesian2(0, -12),
-          disableDepthTestDistance: 500000.0,
-        },
-      });
+    viewer.entities.add({
+      id: selectedSite.id,
+      name: selectedSite.name,
+      position: position,
+      point: {
+        pixelSize: 14,
+        color: Cesium.Color.fromCssColorString('#00FF9D'),
+        outlineColor: Cesium.Color.BLACK,
+        outlineWidth: 2,
+        disableDepthTestDistance: 500000.0,
+      },
+      label: {
+        text: ` ${formatSiteShortName(selectedSite.name)} [ACTIVE] `,
+        font: 'bold 12px "Space Mono", monospace',
+        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+        fillColor: Cesium.Color.fromCssColorString('#00FF9D'),
+        outlineColor: Cesium.Color.BLACK,
+        outlineWidth: 2,
+        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+        pixelOffset: new Cesium.Cartesian2(0, -12),
+        disableDepthTestDistance: 500000.0,
+      },
     });
-  }, [sites, selectedSiteId, _selectedForCompare]);
+  }, [sites, selectedSiteId]);
 
   // Synchronize Cesium sunlight orientation with Candidate Site Date & Hour
   useEffect(() => {
@@ -998,6 +812,9 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
     controls.maxDistance = 550.0;                   // Full Sun-centric system overview
     controls.rotateSpeed = 0.7;
     controls.zoomSpeed = 0.85;
+    controls.addEventListener('change', () => {
+      updateMarkerProjectionsRef.current?.();
+    });
     controlsRef.current = controls;
 
     // 3. Ambient & Fill Lighting
@@ -1425,33 +1242,9 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
     moonGraticuleGroupRef.current = moonGraticuleGroup;
 
     // 3D Physical Pins & Markers for South Pole Candidate Landing Sites on Moon Sphere
+    // Start with an empty group — the update useEffect below populates it
+    // based on the currently selected site only.
     const moonSitesGroup = new THREE.Group();
-    sites.forEach((site) => {
-      const sitePos = selenographicToCartesian(site.latitudeDeg, site.longitudeDeg, MOON_RADIUS_UNITS);
-      const pinColor = site.id.includes('shackleton')
-        ? 0x58D8D0
-        : site.id.includes('malapert')
-        ? 0xECC068
-        : site.id.includes('gerlache')
-        ? 0x78F5EC
-        : 0xFFB3B0;
-
-      // Small 3D Pin Beacon
-      const dotGeo = new THREE.SphereGeometry(0.02, 12, 12);
-      const dotMat = new THREE.MeshBasicMaterial({ color: pinColor });
-      const dot = new THREE.Mesh(dotGeo, dotMat);
-      dot.position.copy(sitePos);
-      moonSitesGroup.add(dot);
-
-      // Micro Pillar Beacon
-      const normal = sitePos.clone().normalize();
-      const beamGeo = new THREE.CylinderGeometry(0.003, 0.003, 0.09, 8);
-      const beamMat = new THREE.MeshBasicMaterial({ color: pinColor, transparent: true, opacity: 0.8 });
-      const beam = new THREE.Mesh(beamGeo, beamMat);
-      beam.position.copy(sitePos.clone().add(normal.clone().multiplyScalar(0.045)));
-      beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
-      moonSitesGroup.add(beam);
-    });
     moonTiltGroup.add(moonSitesGroup);
     moonSitesGroupRef.current = moonSitesGroup;
 
@@ -1579,8 +1372,59 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
     if (celestialLabelsGroupRef.current) celestialLabelsGroupRef.current.visible = showLabels;
   }, [showOrbits, showAxialTilts, showLabels]);
 
-  // 2D Projected candidate site markers on Moon surface (calculated statically upon site selection)
+  // Update 3D Physical Pins & Beacon Markers on Moon Sphere whenever sites or selectedSiteId changes
   useEffect(() => {
+    const group = moonSitesGroupRef.current;
+    if (!group) return;
+
+    // Clear existing pin meshes
+    while (group.children.length > 0) {
+      const child = group.children[0];
+      group.remove(child);
+      if ((child as any).geometry) (child as any).geometry.dispose();
+      if ((child as any).material) {
+        if (Array.isArray((child as any).material)) {
+          (child as any).material.forEach((m: any) => m.dispose());
+        } else {
+          (child as any).material.dispose();
+        }
+      }
+    }
+
+    // Only build a 3D marker for the currently selected site.
+    // All other sites have no 3D mesh — this prevents overlapping pins.
+    const selectedSite = sites.find((s) => s.id === selectedSiteId);
+    if (!selectedSite) return;
+
+    const sitePos = selenographicToCartesian(selectedSite.latitudeDeg, selectedSite.longitudeDeg, MOON_RADIUS_UNITS, selectedSite.elevationMeters || 0);
+    const normal = sitePos.clone().normalize();
+
+    // High-Visibility Selected Landing Site Reticle & Glowing Beacon
+    const beaconGeo = new THREE.SphereGeometry(0.024, 16, 16);
+    const beaconMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const beacon = new THREE.Mesh(beaconGeo, beaconMat);
+    beacon.position.copy(sitePos.clone().add(normal.clone().multiplyScalar(0.055)));
+    group.add(beacon);
+
+    // Vertical Beacon Stem
+    const beamGeo = new THREE.CylinderGeometry(0.004, 0.004, 0.11, 10);
+    const beamMat = new THREE.MeshBasicMaterial({ color: 0x58D8D0 });
+    const beam = new THREE.Mesh(beamGeo, beamMat);
+    beam.position.copy(sitePos.clone().add(normal.clone().multiplyScalar(0.055)));
+    beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
+    group.add(beam);
+
+    // Ground Target Reticle Ring
+    const ringGeo = new THREE.RingGeometry(0.028, 0.042, 24);
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0x58D8D0, side: THREE.DoubleSide, transparent: true, opacity: 0.9 });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.position.copy(sitePos.clone().add(normal.clone().multiplyScalar(0.002)));
+    ring.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
+    group.add(ring);
+  }, [sites, selectedSiteId]);
+
+  // 2D Projected candidate site markers on Moon surface (smoothly synchronized with camera & globe)
+  const updateMarkerProjections = useCallback(() => {
     const camera = cameraRef.current;
     const container = canvasMountRef.current || mountRef.current;
     if (!camera || !container) return;
@@ -1593,7 +1437,7 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
     const posMoonSolar = lastMoonWorldPosRef.current;
 
     const projections = sites.map((site) => {
-      const localSitePos = selenographicToCartesian(site.latitudeDeg, site.longitudeDeg, MOON_RADIUS_UNITS);
+      const localSitePos = selenographicToCartesian(site.latitudeDeg, site.longitudeDeg, MOON_RADIUS_UNITS, site.elevationMeters || 0);
       const worldPos = localSitePos.clone();
       if (moonTiltGroupRef.current) {
         worldPos.applyMatrix4(moonTiltGroupRef.current.matrixWorld);
@@ -1606,7 +1450,8 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
       const dot = surfaceNormal.dot(camToPoint);
 
       const distToCam = camera.position.distanceTo(worldPos);
-      const isVisible = dot > 0.10 && distToCam < 45.0;
+      // Active selected marker stays visible across wide viewing angles so it never disappears during inspection
+      const isVisible = (site.id === selectedSiteId ? dot > -0.25 : dot > 0.03) && distToCam < 80.0;
 
       const screenVec = worldPos.clone().project(camera);
       const screenX = screenVec.x * halfW + halfW;
@@ -1623,6 +1468,11 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
 
     setProjectedMarkers(projections);
   }, [sites, selectedSiteId]);
+
+  useEffect(() => {
+    updateMarkerProjectionsRef.current = updateMarkerProjections;
+    updateMarkerProjections();
+  }, [updateMarkerProjections]);
 
   // ---------------------------------------------------------------------------
   // CONTINUOUS 60 FPS HELIOCENTRIC SIMULATION & DYNAMIC CAMERA TRACKING LOOP
@@ -1929,6 +1779,48 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
       }
 
       // =======================================================================
+      // 7. COMPUTE LIVE TOPOCENTRIC SUNLIGHT ILLUMINATION AT SELECTED LANDING SITE
+      // =======================================================================
+      const targetSite = sitesRef.current.find((s) => s.id === selectedSiteIdRef.current) || sitesRef.current[0];
+      if (targetSite && moonTiltGroupRef.current) {
+        const localSitePos = selenographicToCartesian(targetSite.latitudeDeg, targetSite.longitudeDeg, MOON_RADIUS_UNITS, targetSite.elevationMeters || 0);
+        const localNormal = localSitePos.clone().normalize();
+        const moonWorldQuat = new THREE.Quaternion();
+        moonTiltGroupRef.current.getWorldQuaternion(moonWorldQuat);
+        const worldNormal = localNormal.applyQuaternion(moonWorldQuat).normalize();
+        const toSun = posMoonSolar.clone().negate().normalize();
+        const dotSun = worldNormal.dot(toSun);
+        const solarElevationDeg = Math.asin(Math.max(-1, Math.min(1, dotSun))) * (180 / Math.PI);
+        const incidenceAngleDeg = Math.acos(Math.max(-1, Math.min(1, dotSun))) * (180 / Math.PI);
+
+        const horizonDeg = (targetSite.isDemCovered !== false && siteAnalysisRef.current?.sun?.horizonElevationDeg !== undefined)
+          ? siteAnalysisRef.current.sun.horizonElevationDeg
+          : 0.0;
+        const isIlluminated = solarElevationDeg > horizonDeg;
+        const statusText = isIlluminated
+          ? 'ILLUMINATED'
+          : (solarElevationDeg > 0 ? 'SHADOWED_BY_TERRAIN' : 'SELF_SHADOWED');
+
+        if (time - lastSunlightStateUpdateTimeRef.current > 200) {
+          lastSunlightStateUpdateTimeRef.current = time;
+          setLiveSunlightStatus({
+            isIlluminated,
+            solarElevationDeg: Number(solarElevationDeg.toFixed(2)),
+            incidenceAngleDeg: Number(incidenceAngleDeg.toFixed(2)),
+            statusText,
+          });
+        }
+      }
+
+      // =======================================================================
+      // 8. UPDATE 2D SURFACE-ATTACHED MARKER PROJECTIONS
+      // =======================================================================
+      if (isPlayingRef.current || (time - lastMarkerUpdateTimeRef.current > 60)) {
+        lastMarkerUpdateTimeRef.current = time;
+        updateMarkerProjectionsRef.current?.();
+      }
+
+      // =======================================================================
       // 10. RENDER HELIOCENTRIC THREE.JS SCENE AT FULL 60 FPS
       // =======================================================================
       if (rendererRef.current && sceneRef.current && cameraRef.current) {
@@ -1950,7 +1842,6 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
     const moonPos = getMoonWorldPosition();
 
     setCameraFocusTarget('MOON');
-    setCameraDistanceToTarget(3.2);
     gsap.killTweensOf(camera.position);
     gsap.killTweensOf(controls.target);
 
@@ -1979,7 +1870,6 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
     const moonPos = getMoonWorldPosition();
 
     setCameraFocusTarget('MOON');
-    setCameraDistanceToTarget(2.0);
     gsap.killTweensOf(camera.position);
     gsap.killTweensOf(controls.target);
 
@@ -2008,7 +1898,6 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
     const moonPos = getMoonWorldPosition();
 
     setCameraFocusTarget('MOON');
-    setCameraDistanceToTarget(31.0);
     gsap.killTweensOf(camera.position);
     gsap.killTweensOf(controls.target);
 
@@ -2038,7 +1927,6 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
     const overviewOffset = getSystemOverviewOffset(moonPos);
 
     setCameraFocusTarget('MOON');
-    setCameraDistanceToTarget(146.0);
     gsap.killTweensOf(camera.position);
     gsap.killTweensOf(controls.target);
 
@@ -2076,7 +1964,6 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
       controls.maxDistance
     );
     offset.setLength(newDist);
-    setCameraDistanceToTarget(newDist);
 
     gsap.killTweensOf(camera.position);
     gsap.to(camera.position, {
@@ -2097,12 +1984,11 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
     const moonPos = getMoonWorldPosition();
 
     setCameraFocusTarget('MOON');
-    setCameraDistanceToTarget(2.6);
     gsap.killTweensOf(camera.position);
     gsap.killTweensOf(controls.target);
 
     // Compute surface vector for site in Moon local frame
-    const siteLocal = selenographicToCartesian(site.latitudeDeg, site.longitudeDeg, MOON_RADIUS_UNITS);
+    const siteLocal = selenographicToCartesian(site.latitudeDeg, site.longitudeDeg, MOON_RADIUS_UNITS, site.elevationMeters || 0);
     const siteWorld = siteLocal.clone();
     if (moonTiltGroupRef.current) {
       siteWorld.applyMatrix4(moonTiltGroupRef.current.matrixWorld);
@@ -2110,20 +1996,24 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
       siteWorld.add(moonPos);
     }
 
-    const camOffset = siteWorld.clone().sub(moonPos).normalize().multiplyScalar(2.6);
+    const normal = siteWorld.clone().sub(moonPos).normalize();
+    // Regional zoom: ~1.72 distance from Moon center along normal vector (high detail, safe elevation above 1.25 Moon radius)
+    const camOffset = normal.clone().multiplyScalar(1.72);
+    const camTarget = siteWorld.clone();
+    const camPos = moonPos.clone().add(camOffset).add(new THREE.Vector3(0, 0.12, 0));
 
     gsap.to(controls.target, {
-      x: moonPos.x,
-      y: moonPos.y,
-      z: moonPos.z,
-      duration: 1.3,
+      x: camTarget.x,
+      y: camTarget.y,
+      z: camTarget.z,
+      duration: 1.4,
       ease: 'power2.inOut',
     });
     gsap.to(camera.position, {
-      x: moonPos.x + camOffset.x,
-      y: moonPos.y + camOffset.y + 0.35,
-      z: moonPos.z + camOffset.z,
-      duration: 1.3,
+      x: camPos.x,
+      y: camPos.y,
+      z: camPos.z,
+      duration: 1.4,
       ease: 'power2.inOut',
       onUpdate: () => controls.update(),
     });
@@ -2136,25 +2026,167 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
     prevSelectedSiteIdRef.current = selectedSiteId;
     const targetSite = sites.find((s) => s.id === selectedSiteId);
     if (!targetSite) return;
-    if (cameraFocusTarget === 'MOON') {
-      handleFocusCandidateSite(targetSite);
-    }
-  }, [selectedSiteId, sites, cameraFocusTarget, handleFocusCandidateSite]);
+    handleFocusCandidateSite(targetSite);
+  }, [selectedSiteId, sites, handleFocusCandidateSite]);
 
   // ---------------------------------------------------------------------------
-  // Time Stepping Handlers (Affects 3D visual clock only; never mutates mission configuration)
+  // Dynamic Date & Time Popover State & Handlers
   // ---------------------------------------------------------------------------
+  const [showDatePicker, setShowDatePicker] = useState<boolean>(false);
+  const datePickerContainerRef = useRef<HTMLDivElement>(null);
+  const syncParentTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Close Date & Time Popover on Click Outside or Escape Key
+  useEffect(() => {
+    if (!showDatePicker) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (datePickerContainerRef.current && !datePickerContainerRef.current.contains(e.target as Node)) {
+        setShowDatePicker(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowDatePicker(false);
+    };
+    window.addEventListener('mousedown', handleClickOutside);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showDatePicker]);
+
+  // Clean up debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (syncParentTimeoutRef.current) {
+        clearTimeout(syncParentTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const debouncedSyncParent = useCallback((dateStr: string, hour: number) => {
+    if (syncParentTimeoutRef.current) {
+      clearTimeout(syncParentTimeoutRef.current);
+    }
+    syncParentTimeoutRef.current = setTimeout(() => {
+      onEpochDateChange?.(dateStr, hour);
+    }, 250);
+  }, [onEpochDateChange]);
+
+  const currentSimDateObj = useMemo(() => new Date(simTimeMs), [simTimeMs]);
+
+  const curSimDateString = useMemo(() => {
+    const d = currentSimDateObj;
+    if (isNaN(d.getTime())) return '2026-10-14';
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }, [currentSimDateObj]);
+
+  const curSimHour = isNaN(currentSimDateObj.getTime()) ? 12 : currentSimDateObj.getUTCHours();
+  const curSimMinute = isNaN(currentSimDateObj.getTime()) ? 0 : currentSimDateObj.getUTCMinutes();
+  const curSimSecond = isNaN(currentSimDateObj.getTime()) ? 0 : currentSimDateObj.getUTCSeconds();
+  const curSimSecondsOfDay = curSimHour * 3600 + curSimMinute * 60 + curSimSecond;
+
+  const setSimDateTime = useCallback((
+    year: number,
+    monthIndex: number,
+    day: number,
+    hour: number,
+    minute: number,
+    second: number,
+    syncParent = true
+  ) => {
+    const newMs = Date.UTC(year, monthIndex, day, hour, minute, second);
+    if (isNaN(newMs)) return;
+
+    simTimeRef.current = newMs;
+    setSimTimeMs(newMs);
+    setIsLive(false);
+
+    const dateStr = `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    lastProcessedDatePropRef.current = dateStr;
+    lastProcessedHourPropRef.current = hour;
+
+    if (syncParent) {
+      debouncedSyncParent(dateStr, hour);
+    }
+    onSimulationEpochChangeRef.current?.(new Date(newMs).toISOString());
+  }, [debouncedSyncParent]);
+
+  const handleDateInputChange = useCallback((dateStr: string) => {
+    if (!dateStr) return;
+    const parts = dateStr.split('-').map(Number);
+    if (parts.length !== 3 || parts.some(isNaN)) return;
+    setSimDateTime(parts[0], parts[1] - 1, parts[2], curSimHour, curSimMinute, curSimSecond, true);
+  }, [curSimHour, curSimMinute, curSimSecond, setSimDateTime]);
+
+  const handleTimeInputChange = useCallback((timeStr: string) => {
+    if (!timeStr) return;
+    const parts = timeStr.split(':').map(Number);
+    if (parts.length < 2 || parts.some(isNaN)) return;
+    const h = THREE.MathUtils.clamp(parts[0], 0, 23);
+    const m = THREE.MathUtils.clamp(parts[1], 0, 59);
+    const s = parts.length > 2 ? THREE.MathUtils.clamp(parts[2], 0, 59) : 0;
+    const d = currentSimDateObj;
+    setSimDateTime(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), h, m, s, true);
+  }, [currentSimDateObj, setSimDateTime]);
+
+  const handleTimeScrubberChange = useCallback((totalSeconds: number) => {
+    const clamped = THREE.MathUtils.clamp(totalSeconds, 0, 86399);
+    const h = Math.floor(clamped / 3600);
+    const m = Math.floor((clamped % 3600) / 60);
+    const s = clamped % 60;
+    const d = currentSimDateObj;
+    setSimDateTime(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), h, m, s, true);
+  }, [currentSimDateObj, setSimDateTime]);
+
+  const handleStepDays = useCallback((daysDelta: number) => {
+    const targetMs = simTimeRef.current + daysDelta * 86400 * 1000;
+    const d = new Date(targetMs);
+    setSimDateTime(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds(), true);
+  }, [setSimDateTime]);
+
+  const handleApplyPresetDate = useCallback((dateStr: string, hour = 12) => {
+    const parts = dateStr.split('-').map(Number);
+    if (parts.length !== 3) return;
+    setSimDateTime(parts[0], parts[1] - 1, parts[2], hour, 0, 0, true);
+  }, [setSimDateTime]);
+
+  const handleApplyPresetHour = useCallback((h: number) => {
+    const d = currentSimDateObj;
+    setSimDateTime(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), h, 0, 0, true);
+  }, [currentSimDateObj, setSimDateTime]);
+
+  const handleSetToTodayUtc = useCallback(() => {
+    const now = new Date();
+    setSimDateTime(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), now.getUTCHours(), now.getUTCMinutes(), now.getUTCSeconds(), true);
+  }, [setSimDateTime]);
+
   const handleStepTime = useCallback((hours: number) => {
     setIsLive(false);
     simTimeRef.current += hours * 3600 * 1000;
     setSimTimeMs(simTimeRef.current);
-  }, []);
+    const d = new Date(simTimeRef.current);
+    const dateStr = d.toISOString().substring(0, 10);
+    lastProcessedDatePropRef.current = dateStr;
+    lastProcessedHourPropRef.current = d.getUTCHours();
+    debouncedSyncParent(dateStr, d.getUTCHours());
+    onSimulationEpochChangeRef.current?.(d.toISOString());
+  }, [debouncedSyncParent]);
 
   const handleStepMinutes = useCallback((minutes: number) => {
     setIsLive(false);
     simTimeRef.current += minutes * 60 * 1000;
     setSimTimeMs(simTimeRef.current);
-  }, []);
+    const d = new Date(simTimeRef.current);
+    const dateStr = d.toISOString().substring(0, 10);
+    lastProcessedDatePropRef.current = dateStr;
+    lastProcessedHourPropRef.current = d.getUTCHours();
+    debouncedSyncParent(dateStr, d.getUTCHours());
+    onSimulationEpochChangeRef.current?.(d.toISOString());
+  }, [debouncedSyncParent]);
 
   const handleResetTimeToLive = useCallback(() => {
     setIsLive(true);
@@ -2163,7 +2195,13 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
     const now = Date.now();
     simTimeRef.current = now;
     setSimTimeMs(now);
-  }, []);
+    const d = new Date(now);
+    const dateStr = d.toISOString().substring(0, 10);
+    lastProcessedDatePropRef.current = dateStr;
+    lastProcessedHourPropRef.current = d.getUTCHours();
+    debouncedSyncParent(dateStr, d.getUTCHours());
+    onSimulationEpochChangeRef.current?.(d.toISOString());
+  }, [debouncedSyncParent]);
 
   const handleResetToMissionEpoch = useCallback(() => {
     setIsLive(false);
@@ -2173,8 +2211,12 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
     if (!isNaN(targetMs)) {
       simTimeRef.current = targetMs;
       setSimTimeMs(targetMs);
+      lastProcessedDatePropRef.current = epochDate;
+      lastProcessedHourPropRef.current = epochHour;
+      debouncedSyncParent(epochDate, epochHour);
+      onSimulationEpochChangeRef.current?.(new Date(targetMs).toISOString());
     }
-  }, [epochDate, epochHour]);
+  }, [epochDate, epochHour, debouncedSyncParent]);
 
   const formattedSimUtc = useMemo(() => {
     const d = new Date(simTimeMs);
@@ -2225,8 +2267,6 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
           onToggleAxialTilts={() => setShowAxialTilts((prev) => !prev)}
           showLabels={showLabels}
           onToggleLabels={() => setShowLabels((prev) => !prev)}
-          showHud={showHud}
-          onToggleHud={() => setShowHud((prev) => !prev)}
           isFullscreen={isFullscreen}
           onToggleFullscreen={toggleFullscreen}
           isLoading={isLoading && !hasLoadedOnceRef.current}
@@ -2259,139 +2299,15 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
       )}
 
       {/* =========================================================================
-          AEROSPACE SCIENTIFIC TELEMETRY DOSSIER (Section 8 Requirements)
-      ========================================================================= */}
-      {showHud && (
-        <div className="absolute top-[86px] left-2 flex flex-col gap-1 z-10 pointer-events-none max-w-xs sm:max-w-sm">
-          
-          {/* Header Card: Active Target Tracking & Framing Distance */}
-          <div className="px-2.5 py-1 bg-black/95 border border-white/20 rounded-none flex items-center justify-between font-mono text-[9.5px]">
-            <div className="flex items-center gap-1.5">
-              <span className={`w-1.5 h-1.5 rounded-none ${isLive ? 'bg-emerald-400' : 'bg-cyan-400'}`} />
-              <span className="font-bold text-white uppercase tracking-wider">
-                ZOOM TARGET: MOON ({formatSiteShortName(currentActiveSite?.name || 'South Pole')})
-              </span>
-            </div>
-            <span className="text-[#58D8D0] font-bold tabular-nums">
-              RANGE: {cameraDistanceToTarget < 5.0 ? `${cameraDistanceToTarget.toFixed(2)}u [SURFACE INSPECT]` : cameraDistanceToTarget < 50.0 ? `${cameraDistanceToTarget.toFixed(1)}u [EARTH-MOON]` : `${cameraDistanceToTarget.toFixed(0)}u [FULL SYSTEM]`}
-            </span>
-          </div>
-
-          {/* Scientific Ephemeris & Axial Tilt Dossier (Actual values & constants) */}
-          <div className="px-2.5 py-1.5 bg-black/95 border border-white/20 rounded-none flex flex-col gap-1 font-mono text-[9px] text-white/85">
-            
-            {/* SUN PARAMETERS */}
-            <div className="flex flex-col gap-0.5 pb-1 border-b border-white/10">
-              <div className="flex items-center justify-between text-amber-300 font-bold">
-                <span className="flex items-center gap-1">
-                  <Sun size={10} /> SUN (CENTRAL REFERENCE AT 0,0,0):
-                </span>
-                <span className="text-white text-[8px] uppercase">G2V YELLOW DWARF</span>
-              </div>
-              <div className="flex items-center justify-between text-[8px] text-white/70">
-                <span>Axial Tilt:</span>
-                <span className="text-white font-bold">{SUN_AXIAL_TILT_DEG}° to Ecliptic Normal</span>
-              </div>
-              <div className="flex items-center justify-between text-[8px] text-white/70">
-                <span>Rotation Period:</span>
-                <span className="text-white font-bold">{SUN_CARRINGTON_PERIOD_DAYS}d (Carrington) • 25.05d Equator</span>
-              </div>
-              <div className="flex items-center justify-between text-[8px] text-white/70">
-                <span>Sun–Earth Distance:</span>
-                <span className="text-amber-300 font-bold tabular-nums">
-                  {(sunEarthDistanceKm / 1e6).toFixed(2)}M km ({(sunEarthDistanceKm / 149597870.7).toFixed(4)} AU)
-                </span>
-              </div>
-            </div>
-
-            {/* EARTH PARAMETERS */}
-            <div className="flex flex-col gap-0.5 pb-1 border-b border-white/10">
-              <div className="flex items-center justify-between text-[#58D8D0] font-bold">
-                <span className="flex items-center gap-1">
-                  <Globe size={10} /> EARTH (HELIOCENTRIC REVOLUTION):
-                </span>
-                <span className="text-white text-[8px] uppercase">1.000 AU ORBIT</span>
-              </div>
-              <div className="flex items-center justify-between text-[8px] text-white/70">
-                <span>Axial Tilt (Obliquity):</span>
-                <span className="text-white font-bold">{EARTH_AXIAL_TILT_DEG}° to Ecliptic (Fixed to Polaris)</span>
-              </div>
-              <div className="flex items-center justify-between text-[8px] text-white/70">
-                <span>Rotation Period:</span>
-                <span className="text-white font-bold">23.9345h Sidereal (24.00h Solar Day)</span>
-              </div>
-              <div className="flex items-center justify-between text-[8px] text-white/70">
-                <span>Terminator Day/Night:</span>
-                <span className="text-emerald-400 font-bold">Active Facing Sun at (0,0,0)</span>
-              </div>
-            </div>
-
-            {/* MOON PARAMETERS */}
-            <div className="flex flex-col gap-0.5 pb-1 border-b border-white/10">
-              <div className="flex items-center justify-between text-[#00FF9D] font-bold">
-                <span className="flex items-center gap-1">
-                  <span>🌕</span> MOON (GEOCENTRIC REVOLUTION):
-                </span>
-                <span className="text-white text-[8px] uppercase">TIDALLY LOCKED</span>
-              </div>
-              <div className="flex items-center justify-between text-[8px] text-white/70">
-                <span>Axial Tilt (Cassini State 2):</span>
-                <span className="text-white font-bold">{MOON_AXIAL_TILT_DEG}° to Ecliptic Normal</span>
-              </div>
-              <div className="flex items-center justify-between text-[8px] text-white/70">
-                <span>Orbital Inclination:</span>
-                <span className="text-white font-bold">{MOON_ORBIT_INCLINATION_DEG}° relative to Ecliptic</span>
-              </div>
-              <div className="flex items-center justify-between text-[8px] text-white/70">
-                <span>Rotation & Orbit Period:</span>
-                <span className="text-white font-bold">{MOON_SIDEREAL_PERIOD_DAYS}d Sidereal (1:1 Synchronous)</span>
-              </div>
-              <div className="flex items-center justify-between text-[8px] text-white/70">
-                <span>Earth–Moon Distance:</span>
-                <span className="text-[#58D8D0] font-bold tabular-nums">
-                  {earthMoonDistanceKm.toLocaleString()} km
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-[8px] text-white/70">
-                <span>Orientation to Earth:</span>
-                <span className="text-white font-bold">Near-Side (0°E, 0°N) Earth-Facing</span>
-              </div>
-            </div>
-
-            {/* LIVE SYNODIC PHASE & GRAVITATIONAL TIDE */}
-            <div className="p-1 bg-black/60 border border-white/15 flex flex-col gap-0.5">
-              <div className="flex items-center justify-between text-[8.5px]">
-                <span className="text-amber-300 font-bold flex items-center gap-1">
-                  <span>{celestialMechanics.phaseIcon}</span>
-                  <span>{celestialMechanics.phaseName}</span>
-                </span>
-                <span className="text-white font-bold bg-amber-500/20 px-1 py-0.2 border border-amber-500/40">
-                  {celestialMechanics.illuminationPct}% LIT
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-[7.5px] text-white/60">
-                <span>SYNODIC DAY: {celestialMechanics.synodicDay} / 29.5d</span>
-                <span className="text-[#58D8D0] font-bold">{celestialMechanics.tideType}</span>
-              </div>
-            </div>
-
-            {/* Ephemeris Sync Status */}
-            <div className="text-[7.5px] text-white/50 pt-0.5 flex items-center justify-between">
-              <span>SYNC: {lastEphemSyncTime}</span>
-              <span className={isExactSample ? 'text-emerald-400 font-bold' : 'text-[#58D8D0]'}>
-                {isExactSample ? 'EXACT SPICE SAMPLE' : '60 FPS NLERP INTERPOLATED'}
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* =========================================================================
           2D PROJECTED CANDIDATE SITE MARKERS (OVERLAY ON MOON SURFACE)
       ========================================================================= */}
       {showLabels && (
         <div className="absolute inset-0 pointer-events-none overflow-hidden z-10">
-          {projectedMarkers.map(({ site, screenX, screenY, isVisible, isSelected }) => {
+          {projectedMarkers
+            .filter(({ isSelected }) => isSelected)
+            .map(({ site, screenX, screenY, isVisible }) => {
+            // We only render the selected site marker — isSelected is always true here
+            const isSelected = true;
             if (!isVisible) return null;
 
             return (
@@ -2410,21 +2326,46 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
               >
                 {/* Site Label Badge */}
                 <div 
-                  className={`px-1.5 py-0.5 rounded-none font-mono text-[9px] font-bold uppercase tracking-wider whitespace-nowrap border flex items-center gap-1 mb-1 transition-all ${
+                  className={`font-mono transition-all pointer-events-auto cursor-pointer select-none mb-1 ${
                     isSelected
-                      ? 'bg-[#58D8D0] text-black border-white shadow-[0_0_8px_rgba(88,216,208,0.6)]'
-                      : 'bg-black/90 text-white/90 border-white/30 group-hover/marker:border-white'
+                      ? 'bg-black/95 border border-[#58D8D0] shadow-[0_0_18px_rgba(88,216,208,0.45)] p-1.5 min-w-[170px] rounded-none'
+                      : 'px-1.5 py-0.5 bg-black/90 text-white/90 border border-white/30 group-hover/marker:border-white text-[9px] rounded-none'
                   }`}
                 >
-                  <span>{formatSiteShortName(site.name)}</span>
-                  {isSelected && <span className="w-1.5 h-1.5 bg-black" />}
+                  <div className="flex items-center justify-between gap-1.5">
+                    <span className={`font-bold uppercase tracking-wider ${isSelected ? 'text-[#58D8D0] text-[9.5px]' : 'text-white'}`}>
+                      {formatSiteShortName(site.name)}
+                    </span>
+                    {isSelected && (
+                      <span className="w-1.5 h-1.5 bg-[#58D8D0] rounded-full animate-ping shrink-0" />
+                    )}
+                  </div>
+
+                  {isSelected && (
+                    <div className="flex flex-col gap-0.5 text-[8px] text-white/80 pt-1 mt-1 border-t border-white/20">
+                      <div className="flex items-center justify-between font-mono tabular-nums text-slate-300">
+                        <span>LAT: {Math.abs(site.latitudeDeg).toFixed(2)}°S</span>
+                        <span>LON: {site.longitudeDeg >= 0 ? `${site.longitudeDeg.toFixed(2)}°E` : `${Math.abs(site.longitudeDeg).toFixed(2)}°W`}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-slate-400">
+                        <span>ELEV: {site.elevationMeters ? `${site.elevationMeters > 0 ? '+' : ''}${site.elevationMeters.toFixed(0)}m` : '0m'}</span>
+                        <span className={`px-1 py-0.2 font-bold uppercase text-[7.5px] border ${
+                          liveSunlightStatus.isIlluminated
+                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/50'
+                            : 'bg-rose-500/20 text-rose-300 border-rose-400/50'
+                        }`}>
+                          {liveSunlightStatus.isIlluminated ? '☀️ ILLUMINATED' : '🌑 IN SHADOW'}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Pin Target Box */}
                 <div className="relative flex items-center justify-center">
                   <div 
                     className={`w-3.5 h-3.5 border border-white/80 bg-black/60 flex items-center justify-center rounded-none ${
-                      isSelected ? 'border-white bg-[#58D8D0]/20' : ''
+                      isSelected ? 'border-white bg-[#58D8D0]/30 shadow-[0_0_10px_#58D8D0]' : ''
                     }`}
                   >
                     <div 
@@ -2434,7 +2375,7 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
                   </div>
                 </div>
 
-                <div className="w-px h-2 bg-white/40" />
+                <div className={`w-px ${isSelected ? 'h-3 bg-[#58D8D0]' : 'h-2 bg-white/40'}`} />
               </div>
             );
           })}
@@ -2553,17 +2494,232 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
             <span>RESET</span>
           </button>
 
-          {/* Monospace Clock Display with Synchronization Status */}
-          <div className="px-2 sm:px-2.5 py-0.5 sm:py-1 bg-black border border-white/20 font-mono text-[9.5px] sm:text-[10.5px] text-white font-bold tracking-wider flex items-center gap-1 sm:gap-1.5 rounded-none tabular-nums">
-            <Clock size={10} className={isLive ? "text-emerald-400" : "text-[#58D8D0]"} />
-            <span className="truncate max-w-[140px] sm:max-w-none">{formattedSimUtc}</span>
-            <span className={`text-[8.5px] px-1 py-0.2 font-mono uppercase tracking-widest hidden sm:inline-block ${
-              isLive
-                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40'
-                : 'bg-[#58D8D0]/15 text-[#58D8D0] border border-[#58D8D0]/40'
-            }`}>
-              {isLive ? 'LIVE' : 'SYNCED'}
-            </span>
+          {/* Monospace Clock Display with Synchronization Status & Interactive Popover Trigger */}
+          <div className="relative" ref={datePickerContainerRef}>
+            <button
+              type="button"
+              onClick={() => setShowDatePicker((prev) => !prev)}
+              title="Click to select simulation Date & Time (UTC)"
+              className={`px-2 sm:px-2.5 py-0.5 sm:py-1 bg-black border font-mono text-[9.5px] sm:text-[10.5px] font-bold tracking-wider flex items-center gap-1 sm:gap-1.5 rounded-none tabular-nums cursor-pointer transition-all ${
+                showDatePicker
+                  ? 'border-[#58D8D0] text-[#58D8D0] shadow-[0_0_15px_rgba(88,216,208,0.3)] bg-[#58D8D0]/10'
+                  : 'border-white/20 text-white hover:border-[#58D8D0]/70 hover:bg-white/5'
+              }`}
+            >
+              <Clock size={10} className={isLive ? "text-emerald-400 animate-pulse" : "text-[#58D8D0]"} />
+              <span className="truncate max-w-[140px] sm:max-w-none">{formattedSimUtc}</span>
+              <span className={`text-[8.5px] px-1 py-0.2 font-mono uppercase tracking-widest hidden sm:inline-block ${
+                isLive
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40'
+                  : 'bg-[#58D8D0]/15 text-[#58D8D0] border border-[#58D8D0]/40'
+              }`}>
+                {isLive ? 'LIVE' : 'SYNCED'}
+              </span>
+              <ChevronUp size={10} className={`transition-transform duration-200 text-white/50 ${showDatePicker ? 'rotate-180 text-[#58D8D0]' : ''}`} />
+            </button>
+
+            {/* Dynamic Date & Time Selector Popover */}
+            {showDatePicker && (
+              <div 
+                className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-[340px] sm:w-[410px] max-w-[95vw] bg-[#070A0E]/98 backdrop-blur-xl border border-[#58D8D0]/40 p-3 sm:p-4 flex flex-col gap-3 z-40 font-mono shadow-[0_0_50px_rgba(0,0,0,0.95),0_0_25px_rgba(88,216,208,0.2)] rounded-none text-left select-text"
+                onClick={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                {/* Header */}
+                <div className="flex items-center justify-between pb-2 border-b border-white/15">
+                  <div className="flex items-center gap-2">
+                    <Clock size={12} className="text-[#58D8D0]" />
+                    <span className="text-[10.5px] font-bold text-white uppercase tracking-wider">
+                      SIMULATION EPOCH SELECTOR (UTC)
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowDatePicker(false)}
+                    className="text-white/40 hover:text-white p-0.5 transition-colors cursor-pointer"
+                    title="Close Epoch Selector"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+
+                {/* Live Status Readout */}
+                <div className="flex items-center justify-between bg-black/60 border border-white/10 px-2.5 py-1.5 text-[10px]">
+                  <span className="text-white/50 uppercase">ACTIVE SIMULATION TIME:</span>
+                  <span className="font-bold text-[#58D8D0] tabular-nums tracking-wide">{formattedSimUtc}</span>
+                </div>
+
+                {/* Date Selection */}
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between text-[10px]">
+                    <label htmlFor="sim-date-picker-input" className="text-white/60 uppercase font-semibold flex items-center gap-1.5">
+                      <Calendar size={11} className="text-[#ECC068]" />
+                      <span>MISSION DATE (UTC)</span>
+                    </label>
+                    <div className="flex items-center gap-1 text-[9px]">
+                      <button
+                        type="button"
+                        onClick={() => handleStepDays(-1)}
+                        className="px-1.5 py-0.5 bg-white/5 hover:bg-white/15 border border-white/15 text-white/70 hover:text-white cursor-pointer"
+                        title="Step Backward -1 Day"
+                      >
+                        -1d
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleStepDays(1)}
+                        className="px-1.5 py-0.5 bg-white/5 hover:bg-white/15 border border-white/15 text-white/70 hover:text-white cursor-pointer"
+                        title="Step Forward +1 Day"
+                      >
+                        +1d
+                      </button>
+                    </div>
+                  </div>
+                  <input
+                    id="sim-date-picker-input"
+                    type="date"
+                    value={curSimDateString}
+                    min="1969-01-01"
+                    max="2050-01-01"
+                    onChange={(e) => handleDateInputChange(e.target.value)}
+                    className="w-full bg-black/80 border border-white/25 focus:border-[#58D8D0] focus:ring-1 focus:ring-[#58D8D0]/50 px-2.5 py-1.5 text-xs text-white font-mono tracking-wider outline-none transition-all cursor-pointer rounded-none"
+                  />
+                </div>
+
+                {/* Quick Date Epoch Presets */}
+                <div className="flex flex-wrap items-center gap-1 text-[9px]">
+                  <span className="text-white/40 uppercase mr-0.5">PRESETS:</span>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyPresetDate('2026-10-14', 12)}
+                    className={`px-2 py-0.5 border cursor-pointer transition-colors ${
+                      curSimDateString === '2026-10-14'
+                        ? 'bg-[#58D8D0]/20 text-[#58D8D0] border-[#58D8D0]/50 font-bold'
+                        : 'bg-white/5 text-white/70 border-white/15 hover:text-white hover:bg-white/10'
+                    }`}
+                    title="Artemis III Target Reference Epoch (2026-10-14 12:00 UTC)"
+                  >
+                    Artemis III
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyPresetDate('2027-03-15', 12)}
+                    className={`px-2 py-0.5 border cursor-pointer transition-colors ${
+                      curSimDateString === '2027-03-15'
+                        ? 'bg-[#ECC068]/20 text-[#ECC068] border-[#ECC068]/50 font-bold'
+                        : 'bg-white/5 text-white/70 border-white/15 hover:text-white hover:bg-white/10'
+                    }`}
+                    title="Future Mission Candidate Epoch (2027-03-15 12:00 UTC)"
+                  >
+                    Future 2027
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyPresetDate('1969-07-20', 20)}
+                    className={`px-2 py-0.5 border cursor-pointer transition-colors ${
+                      curSimDateString === '1969-07-20'
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-400/50 font-bold'
+                        : 'bg-white/5 text-white/70 border-white/15 hover:text-white hover:bg-white/10'
+                    }`}
+                    title="Apollo 11 Historical Landing (1969-07-20 20:00 UTC)"
+                  >
+                    Apollo 11
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSetToTodayUtc}
+                    className="px-2 py-0.5 bg-white/5 text-emerald-400 border border-emerald-400/30 hover:bg-emerald-500/15 cursor-pointer font-bold"
+                    title="Current Today UTC"
+                  >
+                    Today
+                  </button>
+                </div>
+
+                {/* Time of Day Control & Scrubber */}
+                <div className="flex flex-col gap-2 pt-2 border-t border-white/10">
+                  <div className="flex items-center justify-between text-[10px]">
+                    <label htmlFor="sim-time-picker-input" className="text-white/60 uppercase font-semibold flex items-center gap-1.5">
+                      <Clock size={11} className="text-[#58D8D0]" />
+                      <span>TIME OF DAY (UTC)</span>
+                    </label>
+                    <input
+                      id="sim-time-picker-input"
+                      type="time"
+                      step="1"
+                      value={`${String(curSimHour).padStart(2, '0')}:${String(curSimMinute).padStart(2, '0')}:${String(curSimSecond).padStart(2, '0')}`}
+                      onChange={(e) => handleTimeInputChange(e.target.value)}
+                      className="bg-black/90 border border-white/25 focus:border-[#58D8D0] px-1.5 py-0.5 text-[10.5px] text-[#58D8D0] font-mono outline-none cursor-pointer rounded-none"
+                    />
+                  </div>
+
+                  {/* 24-Hour Interactive Dynamic Scrubber Slider */}
+                  <div className="flex flex-col gap-1">
+                    <input
+                      type="range"
+                      min="0"
+                      max="86399"
+                      step="60"
+                      value={curSimSecondsOfDay}
+                      onChange={(e) => handleTimeScrubberChange(Number(e.target.value))}
+                      className="w-full accent-[#58D8D0] bg-white/20 h-1.5 cursor-pointer rounded-none"
+                      title="Scrub time across the lunar day"
+                    />
+                    <div className="flex justify-between text-[8px] text-white/40 font-mono">
+                      <span>00:00</span>
+                      <span>06:00</span>
+                      <span>12:00</span>
+                      <span>18:00</span>
+                      <span>24:00</span>
+                    </div>
+                  </div>
+
+                  {/* Quick Time Presets */}
+                  <div className="grid grid-cols-4 gap-1 text-[9px] font-mono">
+                    {[
+                      { label: '00:00 UTC', h: 0 },
+                      { label: '06:00 UTC', h: 6 },
+                      { label: '12:00 UTC', h: 12 },
+                      { label: '18:00 UTC', h: 18 },
+                    ].map(({ label, h }) => (
+                      <button
+                        key={label}
+                        type="button"
+                        onClick={() => handleApplyPresetHour(h)}
+                        className={`py-1 text-center border cursor-pointer transition-colors ${
+                          curSimHour === h && curSimMinute === 0
+                            ? 'bg-[#58D8D0]/20 text-[#58D8D0] border-[#58D8D0]/50 font-bold'
+                            : 'bg-white/5 text-white/70 border-white/10 hover:text-white hover:bg-white/10'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Footer Action Buttons */}
+                <div className="flex items-center justify-between pt-2 border-t border-white/15 text-[9.5px]">
+                  <button
+                    type="button"
+                    onClick={handleResetTimeToLive}
+                    className="flex items-center gap-1 px-2 py-1 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/40 text-emerald-300 font-bold cursor-pointer transition-colors"
+                    title="Resume live real-time simulation"
+                  >
+                    <Radio size={10} className="animate-pulse" />
+                    <span>RESUME LIVE</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowDatePicker(false)}
+                    className="flex items-center gap-1 px-3 py-1 bg-[#58D8D0] hover:bg-[#48c2ba] text-black font-extrabold cursor-pointer transition-colors"
+                  >
+                    <Check size={11} />
+                    <span>DONE</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Speed Presets: 1×, 10×, 1000×, 1h/s, 1d/s, CUSTOM */}

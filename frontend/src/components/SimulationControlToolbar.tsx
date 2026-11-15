@@ -24,8 +24,6 @@ export interface SimulationControlToolbarProps {
   onToggleAxialTilts: () => void;
   showLabels: boolean;
   onToggleLabels: () => void;
-  showHud: boolean;
-  onToggleHud: () => void;
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
   isLoading?: boolean;
@@ -60,7 +58,6 @@ export const SimulationControlToolbarSkeleton: React.FC = () => (
       <div className="w-[54px] h-6 bg-white/10 animate-pulse rounded-none" />
       <div className="w-[78px] h-6 bg-white/10 animate-pulse rounded-none" />
       <div className="w-[54px] h-6 bg-white/10 animate-pulse rounded-none" />
-      <div className="w-[42px] h-6 bg-white/10 animate-pulse rounded-none" />
       <div className="w-6 h-6 bg-white/10 animate-pulse rounded-none" />
     </div>
   </div>
@@ -82,8 +79,6 @@ export const SimulationControlToolbar: React.FC<SimulationControlToolbarProps> =
   onToggleAxialTilts,
   showLabels,
   onToggleLabels,
-  showHud,
-  onToggleHud,
   isFullscreen,
   onToggleFullscreen,
   isLoading = false,
@@ -225,20 +220,6 @@ export const SimulationControlToolbar: React.FC<SimulationControlToolbarProps> =
           }`}
         >
           Labels
-        </button>
-
-        {/* Telemetry HUD Toggle */}
-        <button
-          type="button"
-          onClick={onToggleHud}
-          title="Toggle astronomical telemetry dossier"
-          className={`px-1.5 h-6 flex items-center justify-center text-[8.5px] font-mono uppercase font-bold transition-colors cursor-pointer rounded-none shrink-0 min-w-[42px] ${
-            showHud
-              ? 'bg-white text-black font-extrabold border border-white'
-              : 'text-white/50 hover:text-white border border-white/15'
-          }`}
-        >
-          HUD
         </button>
 
         {/* Fullscreen */}

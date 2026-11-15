@@ -133,11 +133,11 @@ export const SimulationConfigToolbar: React.FC<SimulationConfigToolbarProps> = R
               if (s) onSelectSite(s);
             }}
             title="Jump camera specifically to South Pole landing site on the Moon"
-            className="w-[200px] sm:w-[240px] h-6 bg-black border border-white/25 hover:border-white/50 text-white font-mono text-[9px] font-bold px-2 outline-none cursor-pointer uppercase tracking-wider rounded-none truncate shrink-0"
+            className="w-[240px] sm:w-[290px] h-6 bg-black border border-white/25 hover:border-white/50 text-white font-mono text-[9px] font-bold px-2 outline-none cursor-pointer uppercase tracking-wider rounded-none truncate shrink-0"
           >
             {sites.map((s) => (
               <option key={s.id} value={s.id} className="bg-[#08090C] text-white">
-                SITE: {formatSiteShortName(s.name)} ({Math.abs(s.latitudeDeg).toFixed(1)}°S)
+                SITE: {formatSiteShortName(s.name)} ({Math.abs(s.latitudeDeg).toFixed(2)}°S, {s.longitudeDeg >= 0 ? `${s.longitudeDeg.toFixed(1)}°E` : `${Math.abs(s.longitudeDeg).toFixed(1)}°W`})
               </option>
             ))}
           </select>

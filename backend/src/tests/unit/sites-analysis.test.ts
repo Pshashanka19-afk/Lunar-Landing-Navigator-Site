@@ -17,12 +17,15 @@ describe('SitesController Unit Tests', () => {
 
     expect(jsonResult).toBeDefined();
     expect(jsonResult.success).toBe(true);
-    expect(jsonResult.data.count).toBe(8);
-    expect(jsonResult.data.demonstrationSites.length).toBe(8);
+    expect(jsonResult.data.count).toBe(20);
+    expect(jsonResult.data.demonstrationSites.length).toBe(20);
     const siteIds = jsonResult.data.demonstrationSites.map((s: any) => s.id);
     expect(siteIds).toContain('shackleton-connecting-ridge');
     expect(siteIds).toContain('malapert-massif');
     expect(siteIds).toContain('de-gerlache-rim');
+    expect(siteIds).toContain('haworth-crater-rim');
+    expect(siteIds).toContain('faustini-rim-a');
+    expect(siteIds).toContain('peak-near-shackleton');
   });
 
   it('getSiteById returns site data for an existing ID', async () => {
@@ -190,5 +193,64 @@ describe('SitesController Unit Tests', () => {
     expect(site0.metrics.sunlightTotalHours).toBeGreaterThanOrEqual(0);
     expect(site0.metrics.earthVisibilityTotalHours).toBeGreaterThanOrEqual(0);
     expect(typeof site0.metrics.slopeDeg).toBe('number');
+  });
+
+  it('getCandidateSites returns all 20 verified NASA South Pole candidate sites with provenance', async () => {
+    const req = {} as Request;
+    let jsonResult: any = null;
+    const res = {
+      json: vi.fn((data) => {
+        jsonResult = data;
+        return res;
+      }),
+    } as unknown as Response;
+
+    await SitesController.getCandidateSites(req, res);
+
+    expect(jsonResult).toBeDefined();
+    expect(jsonResult.success).toBe(true);
+    expect(jsonResult.count).toBe(20);
+    expect(jsonResult.candidateSites.length).toBe(20);
+    const shackleton = jsonResult.candidateSites.find((s: any) => s.id === 'shackleton-connecting-ridge');
+    expect(shackleton).toBeDefined();
+    expect(shackleton.latitudeDeg).toBe(-89.78);
+    expect(shackleton.longitudeDeg).toBe(125.4);
+    expect(shackleton.source).toContain('NASA Artemis');
+    expect(shackleton.siteType).toBe('CANDIDATE_REGION');
+
+    const malapert = jsonResult.candidateSites.find((s: any) => s.id === 'malapert-massif');
+    expect(malapert).toBeDefined();
+    expect(malapert.latitudeDeg).toBe(-85.9948);
+  });
+
+  it('evaluateIllumination computes SPICE DE440 solar elevation and horizon clearance for Shackleton', async () => {
+    const req = {
+      body: {
+        siteId: 'shackleton-connecting-ridge',
+        timestamp: '2027-03-15T10:00:00Z',
+      },
+    } as Request;
+
+    let jsonResult: any = null;
+    const res = {
+      json: vi.fn((data) => {
+        jsonResult = data;
+        return res;
+      }),
+      status: vi.fn().mockReturnThis(),
+    } as unknown as Response;
+    const next = vi.fn();
+
+    await SitesController.evaluateIllumination(req, res, next);
+
+    expect(jsonResult).toBeDefined();
+    expect(jsonResult.success).toBe(true);
+    expect(jsonResult.data.siteId).toBe('shackleton-connecting-ridge');
+    expect(jsonResult.data.latitude).toBe(-89.78);
+    expect(jsonResult.data.longitude).toBe(125.4);
+    expect(typeof jsonResult.data.solarElevationDeg).toBe('number');
+    expect(typeof jsonResult.data.incidenceAngleDeg).toBe('number');
+    expect(typeof jsonResult.data.isIlluminated).toBe('boolean');
+    expect(jsonResult.data.dataSource).toContain('NASA JPL SPICE DE440');
   });
 });

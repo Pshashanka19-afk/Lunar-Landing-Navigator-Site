@@ -56,6 +56,16 @@ export class SitesController {
     });
   }
 
+  public static async getCandidateSites(_req: Request, res: Response): Promise<void> {
+    res.json({
+      success: true,
+      count: DEFAULT_DEMO_SITES.length,
+      candidateSites: DEFAULT_DEMO_SITES,
+      dataSource: 'NASA Artemis III Architecture & LRO LOLA/LROC Science Data',
+      referenceFrame: 'MOON_ME',
+    });
+  }
+
   public static async getSiteById(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const { id } = req.params;
@@ -280,6 +290,176 @@ export class SitesController {
       res.json({
         success: true,
         data: comparison,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * Authority endpoint: evaluates instant scientific solar illumination for a specific NASA candidate site
+   * or coordinates using NASA JPL SPICE DE440 ephemeris and LOLA terrain obstruction.
+   */
+  public static async evaluateIllumination(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const {
+        siteId,
+        latitude,
+        latitudeDeg,
+        longitude,
+        longitudeDeg,
+        elevationMeters: reqElev,
+        timestamp,
+        epochUtc,
+        observerHeightMeters: reqObsHeight,
+      } = req.body || {};
+
+      const targetTime = timestamp || epochUtc || new Date().toISOString();
+      const observerHeight = typeof reqObsHeight === 'number' && reqObsHeight >= 0 ? reqObsHeight : 2.0;
+
+      // 1. Resolve site from verified database or fallback coordinates
+      const site = DEFAULT_DEMO_SITES.find((s) => s.id === siteId);
+      const lat = typeof latitudeDeg === 'number' ? latitudeDeg : (typeof latitude === 'number' ? latitude : site?.latitudeDeg);
+      const lon = typeof longitudeDeg === 'number' ? longitudeDeg : (typeof longitude === 'number' ? longitude : site?.longitudeDeg);
+      let elev = typeof reqElev === 'number' ? reqElev : (site?.elevationMeters ?? 0.0);
+      const name = site?.name || 'Selected Lunar Location';
+      const id = site?.id || siteId || 'custom-site';
+
+      if (typeof lat !== 'number' || typeof lon !== 'number') {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_COORDINATES',
+            message: 'A valid siteId or numeric latitude and longitude must be provided.',
+          },
+        });
+        return;
+      }
+
+      LunarFrameService.validateCoordinates({ latitudeDeg: lat, longitudeDeg: lon });
+
+      const ephemerisProvider = EphemerisFactory.getProvider('spice');
+      const demProvider = DemFactory.getDemProvider('geotiff');
+
+      // Check DEM coverage
+      const proj = demProvider.latLonToProjected(lat, lon);
+      const isDemCovered = await demProvider.isPointCovered(proj.x, proj.y);
+
+      let slopeDeg = 0.0;
+      let aspectDeg = 0.0;
+      let surfaceNormalEnu = { x: 0, y: 0, z: 1 };
+      let horizonSamples: HorizonSample[] = [];
+
+      if (isDemCovered) {
+        const demElev = await demProvider.getElevationAt(proj.x, proj.y);
+        if (demElev !== null) elev = demElev;
+
+        const surface = await SurfaceNormalService.analyzeSurface(demProvider, {
+          latitudeDeg: lat,
+          longitudeDeg: lon,
+          observerHeightMeters: observerHeight,
+        });
+        slopeDeg = surface.slopeDeg;
+        aspectDeg = surface.aspectDeg;
+        surfaceNormalEnu = surface.surfaceNormalEnu;
+
+        const horizonProfile = await HorizonProfileService.calculateHorizonProfile(demProvider, {
+          latitudeDeg: lat,
+          longitudeDeg: lon,
+          observerHeightMeters: observerHeight,
+          searchRadiusMeters: 1000.0,
+          azimuthStepDeg: 5.0,
+        });
+        horizonSamples = horizonProfile.samples;
+      }
+
+      // SPICE DE440 Sun Ephemeris
+      const sunGeometry = await ephemerisProvider.calculateTarget({
+        target: 'SUN',
+        epochUtc: targetTime,
+        siteCoords: { latitudeDeg: lat, longitudeDeg: lon, elevationMeters: elev },
+        observerHeightMeters: observerHeight,
+      });
+
+      // Horizon clearance
+      const horizonElevationDeg = isDemCovered
+        ? HorizonProfileService.interpolateHorizonAtAzimuth(horizonSamples, sunGeometry.azimuthDeg)
+        : 0.0;
+      const sunClearanceDeg = sunGeometry.elevationDeg - horizonElevationDeg;
+
+      // Solar incidence
+      const solarIncidence = SolarIncidenceService.calculateSolarIncidence(
+        surfaceNormalEnu,
+        sunGeometry.azimuthDeg,
+        sunGeometry.elevationDeg
+      );
+
+      // Decision
+      const sunClearsHorizon = sunClearanceDeg > 0;
+      const surfaceFacesSun = solarIncidence.isFacingSun;
+      const isIlluminated = sunClearsHorizon && surfaceFacesSun;
+
+      let illuminationStatus: string;
+      if (isIlluminated) {
+        illuminationStatus = 'ILLUMINATED';
+      } else if (!sunClearsHorizon && !surfaceFacesSun) {
+        illuminationStatus = 'BLOCKED_AND_SELF_SHADOWED';
+      } else if (!sunClearsHorizon) {
+        illuminationStatus = 'SHADOWED_BY_TERRAIN';
+      } else {
+        illuminationStatus = 'SELF_SHADOWED';
+      }
+
+      // Window estimate for sunrise / sunset and continuous sunlight hours
+      let continuousSunlightHours = 0;
+      let sunriseUtc: string | null = null;
+      let sunsetUtc: string | null = null;
+
+      try {
+        const windowRes = await WindowCalculationService.calculateWindows(ephemerisProvider, demProvider, {
+          siteCoords: { latitudeDeg: lat, longitudeDeg: lon, elevationMeters: elev },
+          startTimeUtc: targetTime,
+          endTimeUtc: new Date(new Date(targetTime).getTime() + 48 * 3600 * 1000).toISOString(),
+          stepSeconds: 900,
+          observerHeightMeters: observerHeight,
+        });
+
+        continuousSunlightHours = windowRes.summary.longestSunlightContinuousHours;
+        const sunWindows = windowRes.windows.sunWindows;
+        if (sunWindows && sunWindows.length > 0) {
+          sunriseUtc = sunWindows[0].startUtc;
+          sunsetUtc = sunWindows[0].endUtc;
+        }
+      } catch {
+        // Fallback gracefully without window estimation
+      }
+
+      res.json({
+        success: true,
+        data: {
+          siteId: id,
+          siteName: name,
+          siteType: site?.siteType || 'CANDIDATE_REGION',
+          latitude: roundToPrecision(lat, 4),
+          longitude: roundToPrecision(lon, 4),
+          elevationMeters: roundToPrecision(elev, 1),
+          slopeDeg: roundToPrecision(slopeDeg, 1),
+          aspectDeg: roundToPrecision(aspectDeg, 1),
+          timestamp: targetTime,
+          dataSource: 'NASA JPL SPICE DE440 & NASA LOLA Polar DEM',
+          isIlluminated,
+          illuminationStatus,
+          solarElevationDeg: roundToPrecision(sunGeometry.elevationDeg, 2),
+          solarAzimuthDeg: roundToPrecision(sunGeometry.azimuthDeg, 2),
+          horizonElevationDeg: roundToPrecision(horizonElevationDeg, 2),
+          horizonClearanceDeg: roundToPrecision(sunClearanceDeg, 2),
+          incidenceAngleDeg: roundToPrecision(solarIncidence.incidenceAngleDeg, 2),
+          relativeIncidenceFactor: roundToPrecision(solarIncidence.cosineEfficiency, 4),
+          continuousSunlightHours: roundToPrecision(continuousSunlightHours, 1),
+          sunriseUtc,
+          sunsetUtc,
+          isDemCovered,
+        },
       });
     } catch (err) {
       next(err);

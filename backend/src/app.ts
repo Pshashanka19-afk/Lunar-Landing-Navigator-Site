@@ -17,6 +17,7 @@ import windowsRoutes from './routes/windows.routes';
 import seriesRoutes from './routes/series.routes';
 import testRoutes from './routes/test.routes';
 import trekRoutes from './routes/trek.routes';
+import missionRoutes from './routes/mission.routes';
 
 export function createApp(): Express {
   const app = express();
@@ -64,6 +65,8 @@ export function createApp(): Express {
   app.use(`${prefix}/series`, seriesRoutes);
   app.use(`${prefix}/trek`, trekRoutes);
   app.use('/api/trek', trekRoutes);
+  app.use(`${prefix}/mission`, missionRoutes);
+  app.use('/api/mission', missionRoutes);
 
   // Dedicated Test Lab Endpoints (available at both /api/test and /api/v1/test)
   app.use('/api/test', testRoutes);

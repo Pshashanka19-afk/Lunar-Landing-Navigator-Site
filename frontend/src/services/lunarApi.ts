@@ -201,6 +201,43 @@ export interface DemonstrationLandingSite {
   targetRegion: string;
   description: string;
   scientificInterest: string[];
+  siteType?: 'candidate_region' | 'proposed_landing_site' | 'clps_touchdown' | 'historical_reference';
+  source?: string;
+  coordinateReference?: string;
+  uncertaintyKm?: number;
+}
+
+export interface IlluminationEvaluationRequest {
+  siteId?: string;
+  latitude?: number;
+  longitude?: number;
+  elevationMeters?: number;
+  observerHeightMeters?: number;
+  timestamp: string;
+}
+
+export interface IlluminationEvaluationData {
+  siteId: string;
+  siteName: string;
+  siteType: string;
+  latitude: number;
+  longitude: number;
+  elevationMeters: number;
+  slopeDeg: number;
+  aspectDeg: number;
+  timestamp: string;
+  dataSource: string;
+  isIlluminated: boolean;
+  illuminationStatus: string;
+  solarElevationDeg: number;
+  solarAzimuthDeg: number;
+  horizonElevationDeg: number;
+  horizonClearanceDeg: number;
+  incidenceAngleDeg: number;
+  relativeIncidenceFactor: number;
+  continuousSunlightHours: number;
+  sunriseUtc: string | null;
+  sunsetUtc: string | null;
 }
 
 export interface WindowsCalculationSummary {
@@ -535,16 +572,63 @@ export const lunarApi = {
    * Retrieve default lunar landing sites
    */
   async getDefaultSites(): Promise<DemonstrationLandingSite[]> {
+    try {
+      const missionRes: any = await apiFetch<any>('/mission/candidate-sites');
+      if (missionRes && Array.isArray(missionRes.candidateSites)) {
+        return missionRes.candidateSites;
+      }
+    } catch {
+      // fallback to legacy
+    }
     const res: any = await apiFetch<any>('/sites/defaults');
     return res.demonstrationSites || res;
   },
 
   /**
+   * Official NASA Artemis South Pole Candidate Landing Sites
+   * (GET /api/mission/candidate-sites)
+   */
+  async getCandidateSites(): Promise<DemonstrationLandingSite[]> {
+    try {
+      const res: any = await apiFetch<any>('/mission/candidate-sites');
+      if (res && Array.isArray(res.candidateSites)) {
+        return res.candidateSites;
+      }
+    } catch {
+      // fallback
+    }
+    return this.getDefaultSites();
+  },
+
+  /**
    * Retrieve an individual candidate landing site by ID
+   * (GET /api/mission/candidate-sites/:id)
    */
   async getSiteById(id: string): Promise<DemonstrationLandingSite> {
+    try {
+      const missionRes: any = await apiFetch<any>(`/mission/candidate-sites/${id}`);
+      if (missionRes && missionRes.site) {
+        return missionRes.site;
+      }
+    } catch {
+      // fallback
+    }
     const res: any = await apiFetch<any>(`/sites/${id}`);
     return res.site || res;
+  },
+
+  /**
+   * Evaluates location-specific solar illumination at the selected landing site
+   * combining SPICE DE440 ephemeris, LOLA DEM terrain horizon, surface normal, and continuous sunlight duration.
+   * (POST /api/mission/illumination/evaluate)
+   */
+  async evaluateIllumination(params: IlluminationEvaluationRequest): Promise<IlluminationEvaluationData> {
+    const res: any = await apiFetch<any>('/mission/illumination/evaluate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    return res.data || res;
   },
 
   /**
