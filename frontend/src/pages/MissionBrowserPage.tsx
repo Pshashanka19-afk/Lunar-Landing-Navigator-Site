@@ -515,16 +515,21 @@ export const MissionBrowserPage: React.FC = () => {
     }
   }, [candidateSites, selectedSiteId, epochDate, epochHour]);
 
+  // Track live simulation cursor ISO timestamp for smooth horizontal timeline synchronization
+  const [simulationCursorEpochIso, setSimulationCursorEpochIso] = useState<string>(
+    () => `${epochDate}T${String(epochHour).padStart(2, '0')}:00:00Z`
+  );
+
   // Synchronize mission epoch from interactive map date/time selection
   const handleEpochDateHourChange = useCallback((newDate: string, newHour: number) => {
     setEpochDate(newDate);
     setEpochHour(newHour);
+    setSimulationCursorEpochIso(`${newDate}T${String(newHour).padStart(2, '0')}:00:00Z`);
   }, []);
 
-  // Read-only separation: Simulation animation playback must never mutate mission configuration
-  // or trigger backend ephemeris recalculations.
-  const handleSimulationEpochChange = useCallback((_isoUtc: string) => {
-    // Strictly read-only: No state mutation during animation playback
+  // Update live simulation cursor timestamp (read-only: does not trigger backend ephemeris recalculations)
+  const handleSimulationEpochChange = useCallback((isoUtc: string) => {
+    setSimulationCursorEpochIso(isoUtc);
   }, []);
 
   useEffect(() => {
@@ -1045,7 +1050,7 @@ export const MissionBrowserPage: React.FC = () => {
           ========================================================================= */}
           <MultiTrackTimeline
             site={activeSite}
-            currentEpochIso={`${epochDate}T${String(epochHour).padStart(2, '0')}:00:00Z`}
+            currentEpochIso={simulationCursorEpochIso}
             onSelectEpoch={(newIso) => {
               const d = new Date(newIso);
               if (!isNaN(d.getTime())) {
@@ -1054,6 +1059,7 @@ export const MissionBrowserPage: React.FC = () => {
                 const day = String(d.getUTCDate()).padStart(2, '0');
                 setEpochDate(`${yr}-${mo}-${day}`);
                 setEpochHour(d.getUTCHours());
+                setSimulationCursorEpochIso(newIso);
               }
             }}
             onSelectSite={(id) => setSelectedSiteId(id)}

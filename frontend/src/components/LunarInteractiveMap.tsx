@@ -527,8 +527,16 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
   const siteAnalysisRef = useRef(siteAnalysis);
   siteAnalysisRef.current = siteAnalysis;
   const lastSunlightStateUpdateTimeRef = useRef<number>(0);
-  const lastMarkerUpdateTimeRef = useRef<number>(0);
   const updateMarkerProjectionsRef = useRef<() => void>(() => {});
+  const lastProjectedMarkerRef = useRef<{
+    siteId: string;
+    screenX: number;
+    screenY: number;
+    isVisible: boolean;
+  }>({ siteId: '', screenX: -9999, screenY: -9999, isVisible: false });
+  // Toggle state to show details card ONLY when clicking on the location point
+  const [showDetailsCard, setShowDetailsCard] = useState<boolean>(false);
+  const markerContainerRef = useRef<HTMLDivElement>(null);
 
   // Live topocentric sunlight simulation state evaluated continuously at selected landing site
   const [liveSunlightStatus, setLiveSunlightStatus] = useState<{
@@ -552,6 +560,7 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
     earthNight: THREE.Texture | null;
     earthClouds: THREE.Texture | null;
     sunPhotosphere: THREE.Texture | null;
+    lolaColor: THREE.Texture | null;
   }>({
     lrocColor: null,
     elevation: null,
@@ -560,6 +569,7 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
     earthNight: null,
     earthClouds: null,
     sunPhotosphere: null,
+    lolaColor: null,
   });
 
   // Fullscreen Management
@@ -730,27 +740,14 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
       lunarEllipsoid
     );
 
+    // Keep entity for click selection without duplicate visual rendering
     viewer.entities.add({
       id: selectedSite.id,
       name: selectedSite.name,
       position: position,
       point: {
-        pixelSize: 14,
-        color: Cesium.Color.fromCssColorString('#00FF9D'),
-        outlineColor: Cesium.Color.BLACK,
-        outlineWidth: 2,
-        disableDepthTestDistance: 500000.0,
-      },
-      label: {
-        text: ` ${formatSiteShortName(selectedSite.name)} [ACTIVE] `,
-        font: 'bold 12px "Space Mono", monospace',
-        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-        fillColor: Cesium.Color.fromCssColorString('#00FF9D'),
-        outlineColor: Cesium.Color.BLACK,
-        outlineWidth: 2,
-        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-        pixelOffset: new Cesium.Cartesian2(0, -12),
-        disableDepthTestDistance: 500000.0,
+        pixelSize: 4,
+        color: Cesium.Color.TRANSPARENT,
       },
     });
   }, [sites, selectedSiteId]);
@@ -838,6 +835,16 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
     lrocColor.colorSpace = THREE.SRGBColorSpace;
     const elevation = textureLoader.load('/textures/moon/lunar_elevation_4k.jpg', checkLoaded);
     elevation.colorSpace = THREE.SRGBColorSpace;
+    const lolaColor = textureLoader.load('/textures/moon/lola_color_altimetry_4k.jpg', (tex) => {
+      checkLoaded();
+      if (moonMeshRef.current && activeLayerRef.current === 'MOON_TREK_LOLA') {
+        const mat = moonMeshRef.current.material as THREE.MeshStandardMaterial;
+        mat.map = tex;
+        mat.bumpScale = 0.04;
+        mat.needsUpdate = true;
+      }
+    });
+    lolaColor.colorSpace = THREE.SRGBColorSpace;
     const bumpMap = textureLoader.load('/textures/moon/ldem_4k_bump.jpg', checkLoaded);
 
     const earthDay = textureLoader.load('/textures/earth/2k_earth_daymap.jpg', checkLoaded);
@@ -850,7 +857,7 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
     sunPhotosphere.colorSpace = THREE.SRGBColorSpace;
 
     const maxAnisotropy = Math.min(16, renderer.capabilities.getMaxAnisotropy());
-    [lrocColor, elevation, bumpMap, earthDay, earthNight, earthClouds, sunPhotosphere].forEach((tex) => {
+    [lrocColor, elevation, bumpMap, earthDay, earthNight, earthClouds, sunPhotosphere, lolaColor].forEach((tex) => {
       if (!tex) return;
       tex.anisotropy = maxAnisotropy;
       tex.generateMipmaps = true;
@@ -866,6 +873,7 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
       earthNight,
       earthClouds,
       sunPhotosphere,
+      lolaColor,
     };
 
     // =========================================================================
@@ -1159,10 +1167,11 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
 
     // Moon Sphere Mesh
     const moonGeo = new THREE.SphereGeometry(MOON_RADIUS_UNITS, 128, 128);
+    const initialMap = activeLayerRef.current === 'MOON_TREK_LOLA' ? lolaColor : lrocColor;
     const moonMat = new THREE.MeshStandardMaterial({
-      map: lrocColor,
+      map: initialMap,
       bumpMap: bumpMap,
-      bumpScale: 0.08,
+      bumpScale: activeLayerRef.current === 'MOON_TREK_LOLA' ? 0.04 : 0.08,
       roughness: 0.92,
       metalness: 0.02,
     });
@@ -1318,8 +1327,8 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
     let maxZoom = 8;
 
     if (activeLayer === 'MOON_TREK_LOLA') {
-      layerUrl = 'https://trek.nasa.gov/tiles/Moon/EQ/LRO_LOLA_ClrShade_Global_128ppd_v04/1.0.0/default/default028mm/{z}/{y}/{x}.jpg';
-      attribution = 'NASA / GSFC / Barker et al. (LOLA Altimetry)';
+      layerUrl = 'https://trek.nasa.gov/tiles/Moon/EQ/LRO_LOLA_ClrShade_Global_128ppd_v04/1.0.0/default/default028mm/{z}/{y}/{x}.png';
+      attribution = 'NASA LOLA Global Color Altimetry Hillshade (237m/px)';
       maxZoom = 7;
     } else if (activeLayer === 'MOON_TREK_RELIEF') {
       layerUrl = 'https://trek.nasa.gov/tiles/Moon/EQ/LRO_LOLAKaguya_Hillshade_60N60S_512ppd/1.0.0/default/default028mm/{z}/{y}/{x}.png';
@@ -1346,15 +1355,33 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
       // Fallback Three.js lunar texture mode
       if (cesiumMountRef.current) cesiumMountRef.current.style.opacity = '0';
       if (moonMeshRef.current) moonMeshRef.current.visible = true;
+    }
 
-      if (texturesRef.current && moonMeshRef.current) {
-        const textures = texturesRef.current;
-        const targetTex = activeLayer === 'ELEVATION' ? textures.elevation : textures.lrocColor;
-        if (targetTex) {
-          const mat = moonMeshRef.current.material as THREE.MeshStandardMaterial;
-          mat.map = targetTex;
-          mat.needsUpdate = true;
-        }
+    // Synchronize Three.js 3D Moon sphere texture with the chosen map layer
+    if (texturesRef.current && moonMeshRef.current) {
+      const textures = texturesRef.current;
+      let targetTex: THREE.Texture | null = textures.lrocColor;
+      let targetBumpScale = 0.08;
+
+      if (activeLayer === 'MOON_TREK_LOLA') {
+        targetTex = textures.lolaColor || textures.elevation || textures.lrocColor;
+        targetBumpScale = 0.04;
+      } else if (activeLayer === 'MOON_TREK_RELIEF') {
+        targetTex = textures.elevation || textures.lrocColor;
+        targetBumpScale = 0.12;
+      } else if (activeLayer === 'ELEVATION') {
+        targetTex = textures.elevation;
+        targetBumpScale = 0.10;
+      } else {
+        targetTex = textures.lrocColor;
+        targetBumpScale = 0.08;
+      }
+
+      if (targetTex) {
+        const mat = moonMeshRef.current.material as THREE.MeshStandardMaterial;
+        mat.map = targetTex;
+        mat.bumpScale = targetBumpScale;
+        mat.needsUpdate = true;
       }
     }
   }, [activeLayer]);
@@ -1399,28 +1426,44 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
     const sitePos = selenographicToCartesian(selectedSite.latitudeDeg, selectedSite.longitudeDeg, MOON_RADIUS_UNITS, selectedSite.elevationMeters || 0);
     const normal = sitePos.clone().normalize();
 
-    // High-Visibility Selected Landing Site Reticle & Glowing Beacon
-    const beaconGeo = new THREE.SphereGeometry(0.024, 16, 16);
-    const beaconMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    const beacon = new THREE.Mesh(beaconGeo, beaconMat);
-    beacon.position.copy(sitePos.clone().add(normal.clone().multiplyScalar(0.055)));
-    group.add(beacon);
-
-    // Vertical Beacon Stem
-    const beamGeo = new THREE.CylinderGeometry(0.004, 0.004, 0.11, 10);
-    const beamMat = new THREE.MeshBasicMaterial({ color: 0x58D8D0 });
-    const beam = new THREE.Mesh(beamGeo, beamMat);
-    beam.position.copy(sitePos.clone().add(normal.clone().multiplyScalar(0.055)));
-    beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
-    group.add(beam);
-
-    // Ground Target Reticle Ring
-    const ringGeo = new THREE.RingGeometry(0.028, 0.042, 24);
-    const ringMat = new THREE.MeshBasicMaterial({ color: 0x58D8D0, side: THREE.DoubleSide, transparent: true, opacity: 0.9 });
+    // High-Visibility Selected Landing Site Reticle Flush to Moon Surface
+    // Outer Target Reticle Ring (flush with lunar crust)
+    const ringGeo = new THREE.RingGeometry(0.032, 0.046, 32);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0x58D8D0,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.95,
+      depthTest: true,
+    });
     const ring = new THREE.Mesh(ringGeo, ringMat);
-    ring.position.copy(sitePos.clone().add(normal.clone().multiplyScalar(0.002)));
+    ring.position.copy(sitePos.clone().add(normal.clone().multiplyScalar(0.003)));
     ring.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
     group.add(ring);
+
+    // Inner Target Reticle Ring (precision landing bullseye)
+    const innerRingGeo = new THREE.RingGeometry(0.012, 0.020, 24);
+    const innerRingMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.95,
+      depthTest: true,
+    });
+    const innerRing = new THREE.Mesh(innerRingGeo, innerRingMat);
+    innerRing.position.copy(sitePos.clone().add(normal.clone().multiplyScalar(0.004)));
+    innerRing.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
+    group.add(innerRing);
+
+    // Surface Landing Dot (flush on the ground)
+    const dotGeo = new THREE.SphereGeometry(0.010, 16, 16);
+    const dotMat = new THREE.MeshBasicMaterial({
+      color: 0x58D8D0,
+      depthTest: true,
+    });
+    const dot = new THREE.Mesh(dotGeo, dotMat);
+    dot.position.copy(sitePos.clone().add(normal.clone().multiplyScalar(0.004)));
+    group.add(dot);
   }, [sites, selectedSiteId]);
 
   // 2D Projected candidate site markers on Moon surface (smoothly synchronized with camera & globe)
@@ -1431,43 +1474,124 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
 
     const cWidth = container.clientWidth;
     const cHeight = container.clientHeight;
+    if (cWidth === 0 || cHeight === 0) return;
     const halfW = cWidth / 2;
     const halfH = cHeight / 2;
 
-    const posMoonSolar = lastMoonWorldPosRef.current;
+    if (moonGroupRef.current) {
+      moonGroupRef.current.updateWorldMatrix(true, true);
+    }
 
-    const projections = sites.map((site) => {
-      const localSitePos = selenographicToCartesian(site.latitudeDeg, site.longitudeDeg, MOON_RADIUS_UNITS, site.elevationMeters || 0);
-      const worldPos = localSitePos.clone();
-      if (moonTiltGroupRef.current) {
-        worldPos.applyMatrix4(moonTiltGroupRef.current.matrixWorld);
-      } else {
-        worldPos.add(posMoonSolar);
+    const posMoonSolar = getMoonWorldPosition();
+
+    const selectedSite = sites.find((s) => s.id === selectedSiteId);
+    if (!selectedSite) {
+      setProjectedMarkers([]);
+      return;
+    }
+
+    const localSitePos = selenographicToCartesian(
+      selectedSite.latitudeDeg,
+      selectedSite.longitudeDeg,
+      MOON_RADIUS_UNITS,
+      selectedSite.elevationMeters || 0
+    );
+
+    const worldPos = localSitePos.clone();
+    if (moonTiltGroupRef.current) {
+      worldPos.applyMatrix4(moonTiltGroupRef.current.matrixWorld);
+    } else {
+      worldPos.add(posMoonSolar);
+    }
+
+    const cesiumViewer = cesiumViewerRef.current;
+    const isMoonTrekActive = activeLayerRef.current.startsWith('MOON_TREK_');
+    const distUnits = camera.position.distanceTo(posMoonSolar);
+
+    let screenX = 0;
+    let screenY = 0;
+    let isVisible = false;
+
+    // If Cesium Moon Trek is active at close range, compute screen projection strictly from Cesium's scene
+    if (isMoonTrekActive && distUnits <= 120.0 && cesiumViewer && !cesiumViewer.isDestroyed()) {
+      const lunarEllipsoid = new Cesium.Ellipsoid(
+        LUNAR_MEAN_RADIUS_METERS,
+        LUNAR_MEAN_RADIUS_METERS,
+        LUNAR_MEAN_RADIUS_METERS
+      );
+      const cesiumPos = Cesium.Cartesian3.fromDegrees(
+        selectedSite.longitudeDeg,
+        selectedSite.latitudeDeg,
+        selectedSite.elevationMeters || 0,
+        lunarEllipsoid
+      );
+
+      const camPosCesium = cesiumViewer.camera.positionWC;
+      const surfaceNormalCesium = Cesium.Cartesian3.normalize(cesiumPos, new Cesium.Cartesian3());
+      const toCamCesium = Cesium.Cartesian3.subtract(camPosCesium, cesiumPos, new Cesium.Cartesian3());
+      Cesium.Cartesian3.normalize(toCamCesium, toCamCesium);
+      const dotCesium = Cesium.Cartesian3.dot(surfaceNormalCesium, toCamCesium);
+
+      if (dotCesium > 0.05) {
+        const winPos = Cesium.SceneTransforms.worldToWindowCoordinates(cesiumViewer.scene, cesiumPos);
+        if (winPos) {
+          screenX = winPos.x;
+          screenY = winPos.y;
+          isVisible = true;
+        }
       }
-
+    } else {
+      // Three.js Projection when in global view or base texture mode
       const surfaceNormal = worldPos.clone().sub(posMoonSolar).normalize();
       const camToPoint = camera.position.clone().sub(worldPos).normalize();
       const dot = surfaceNormal.dot(camToPoint);
-
       const distToCam = camera.position.distanceTo(worldPos);
-      // Active selected marker stays visible across wide viewing angles so it never disappears during inspection
-      const isVisible = (site.id === selectedSiteId ? dot > -0.25 : dot > 0.03) && distToCam < 80.0;
 
       const screenVec = worldPos.clone().project(camera);
-      const screenX = screenVec.x * halfW + halfW;
-      const screenY = -(screenVec.y * halfH) + halfH;
+      isVisible = dot > 0.05 && screenVec.z > -1.0 && screenVec.z < 1.0 && distToCam < 80.0;
+      screenX = screenVec.x * halfW + halfW;
+      screenY = -(screenVec.y * halfH) + halfH;
+    }
 
-      return {
-        site,
-        screenX,
-        screenY,
-        isVisible,
-        isSelected: site.id === selectedSiteId,
-      };
-    });
+    const isWithinScreen = screenX >= -50 && screenX <= cWidth + 50 && screenY >= -50 && screenY <= cHeight + 50;
+    const finalVisible = isVisible && isWithinScreen;
 
-    setProjectedMarkers(projections);
-  }, [sites, selectedSiteId]);
+    // Direct synchronous DOM update for zero frame latency during mouse rotation
+    if (markerContainerRef.current) {
+      markerContainerRef.current.style.transition = 'none';
+      if (finalVisible) {
+        markerContainerRef.current.style.display = 'block';
+        markerContainerRef.current.style.transform = `translate3d(${screenX}px, ${screenY}px, 0)`;
+      } else {
+        markerContainerRef.current.style.display = 'none';
+      }
+    }
+
+    const prev = lastProjectedMarkerRef.current;
+    if (
+      prev.siteId === selectedSite.id &&
+      prev.isVisible === finalVisible &&
+      Math.abs(prev.screenX - screenX) < 0.25 &&
+      Math.abs(prev.screenY - screenY) < 0.25
+    ) {
+      return; // Skip React re-render when marker coordinate change is sub-pixel
+    }
+
+    lastProjectedMarkerRef.current = {
+      siteId: selectedSite.id,
+      screenX,
+      screenY,
+      isVisible: finalVisible,
+    };
+
+    setProjectedMarkers([{
+      site: selectedSite,
+      screenX,
+      screenY,
+      isVisible: finalVisible,
+      isSelected: true,
+    }]);
+  }, [sites, selectedSiteId, getMoonWorldPosition]);
 
   useEffect(() => {
     updateMarkerProjectionsRef.current = updateMarkerProjections;
@@ -1480,6 +1604,7 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
   useEffect(() => {
     let animationFrameId: number;
     let lastRealTime = performance.now();
+    let lastEpochNotifyTime = 0;
 
     const animate = (time: number) => {
       animationFrameId = requestAnimationFrame(animate);
@@ -1500,6 +1625,14 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
       if (!Number.isFinite(currentSimTime)) {
         currentSimTime = Date.now();
         simTimeRef.current = currentSimTime;
+      }
+
+      // Synchronize live timeline cursor with simulation clock progression (~10 FPS throttle)
+      if (isPlayingRef.current || isLiveRef.current) {
+        if (time - lastEpochNotifyTime >= 100) {
+          lastEpochNotifyTime = time;
+          onSimulationEpochChangeRef.current?.(new Date(currentSimTime).toISOString());
+        }
       }
 
       // =======================================================================
@@ -1639,6 +1772,11 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
         const upAxis = new THREE.Vector3(0, 1, 0);
         rotMat.lookAt(new THREE.Vector3(0, 0, 0), toEarth.clone().negate(), upAxis);
         moonTiltGroupRef.current.quaternion.setFromRotationMatrix(rotMat);
+      }
+
+      // Synchronize Moon world matrix hierarchy before projections or camera tracking
+      if (moonGroupRef.current) {
+        moonGroupRef.current.updateWorldMatrix(true, true);
       }
 
       // =======================================================================
@@ -1813,12 +1951,9 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
       }
 
       // =======================================================================
-      // 8. UPDATE 2D SURFACE-ATTACHED MARKER PROJECTIONS
+      // 8. UPDATE 2D SURFACE-ATTACHED MARKER PROJECTIONS SYNCHRONOUSLY
       // =======================================================================
-      if (isPlayingRef.current || (time - lastMarkerUpdateTimeRef.current > 60)) {
-        lastMarkerUpdateTimeRef.current = time;
-        updateMarkerProjectionsRef.current?.();
-      }
+      updateMarkerProjectionsRef.current?.();
 
       // =======================================================================
       // 10. RENDER HELIOCENTRIC THREE.JS SCENE AT FULL 60 FPS
@@ -1978,6 +2113,7 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
 
   const handleFocusCandidateSite = useCallback((site: MapSiteItem) => {
     onSelectSite(site.id);
+    setShowDetailsCard(true);
     if (!cameraRef.current || !controlsRef.current) return;
     const camera = cameraRef.current;
     const controls = controlsRef.current;
@@ -1986,6 +2122,11 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
     setCameraFocusTarget('MOON');
     gsap.killTweensOf(camera.position);
     gsap.killTweensOf(controls.target);
+
+    // Ensure Moon world matrix is fully up to date
+    if (moonGroupRef.current) {
+      moonGroupRef.current.updateWorldMatrix(true, true);
+    }
 
     // Compute surface vector for site in Moon local frame
     const siteLocal = selenographicToCartesian(site.latitudeDeg, site.longitudeDeg, MOON_RADIUS_UNITS, site.elevationMeters || 0);
@@ -1997,10 +2138,10 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
     }
 
     const normal = siteWorld.clone().sub(moonPos).normalize();
-    // Regional zoom: ~1.72 distance from Moon center along normal vector (high detail, safe elevation above 1.25 Moon radius)
-    const camOffset = normal.clone().multiplyScalar(1.72);
+    // Regional zoom: ~2.1 distance from Moon center along normal vector directly facing candidate landing site
+    const camOffset = normal.clone().multiplyScalar(2.1);
     const camTarget = siteWorld.clone();
-    const camPos = moonPos.clone().add(camOffset).add(new THREE.Vector3(0, 0.12, 0));
+    const camPos = moonPos.clone().add(camOffset);
 
     gsap.to(controls.target, {
       x: camTarget.x,
@@ -2015,7 +2156,10 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
       z: camPos.z,
       duration: 1.4,
       ease: 'power2.inOut',
-      onUpdate: () => controls.update(),
+      onUpdate: () => {
+        controls.update();
+        updateMarkerProjectionsRef.current?.();
+      },
     });
   }, [getMoonWorldPosition, onSelectSite]);
 
@@ -2054,6 +2198,16 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [showDatePicker]);
+
+  // Close candidate site details card on Escape key
+  useEffect(() => {
+    if (!showDetailsCard) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowDetailsCard(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showDetailsCard]);
 
   // Clean up debounce timer on unmount
   useEffect(() => {
@@ -2306,76 +2460,90 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
           {projectedMarkers
             .filter(({ isSelected }) => isSelected)
             .map(({ site, screenX, screenY, isVisible }) => {
-            // We only render the selected site marker — isSelected is always true here
-            const isSelected = true;
             if (!isVisible) return null;
 
             return (
               <div
                 key={site.id}
+                ref={markerContainerRef}
                 style={{
                   transform: `translate3d(${screenX}px, ${screenY}px, 0)`,
                   position: 'absolute',
                   top: 0,
                   left: 0,
+                  transition: 'none',
                 }}
-                className="pointer-events-auto cursor-pointer -translate-x-1/2 -translate-y-full flex flex-col items-center group/marker transition-transform duration-100 hover:scale-105"
-                onClick={() => handleFocusCandidateSite(site)}
-                onMouseEnter={() => setHoveredSite(site)}
-                onMouseLeave={() => setHoveredSite(null)}
+                className="pointer-events-none select-none z-20"
               >
-                {/* Site Label Badge */}
-                <div 
-                  className={`font-mono transition-all pointer-events-auto cursor-pointer select-none mb-1 ${
-                    isSelected
-                      ? 'bg-black/95 border border-[#58D8D0] shadow-[0_0_18px_rgba(88,216,208,0.45)] p-1.5 min-w-[170px] rounded-none'
-                      : 'px-1.5 py-0.5 bg-black/90 text-white/90 border border-white/30 group-hover/marker:border-white text-[9px] rounded-none'
-                  }`}
+                {/* Surface Reticle Point [■] on Location (Clickable to Toggle Details) */}
+                <button 
+                  type="button"
+                  className="absolute top-0 left-0 -translate-x-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center pointer-events-auto cursor-pointer group/pin focus:outline-none"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowDetailsCard((prev) => !prev);
+                  }}
+                  onMouseEnter={() => setHoveredSite(site)}
+                  onMouseLeave={() => setHoveredSite(null)}
+                  title={showDetailsCard ? "Click to hide details" : "Click to view landing site details"}
                 >
-                  <div className="flex items-center justify-between gap-1.5">
-                    <span className={`font-bold uppercase tracking-wider ${isSelected ? 'text-[#58D8D0] text-[9.5px]' : 'text-white'}`}>
-                      {formatSiteShortName(site.name)}
-                    </span>
-                    {isSelected && (
-                      <span className="w-1.5 h-1.5 bg-[#58D8D0] rounded-full animate-ping shrink-0" />
-                    )}
+                  {/* Point reticle [■] */}
+                  <div className="w-3.5 h-3.5 border border-[#58D8D0] bg-black/90 flex items-center justify-center shadow-[0_0_12px_#58D8D0] group-hover/pin:scale-125 transition-transform duration-100">
+                    <div className="w-1.5 h-1.5 bg-white" />
                   </div>
+                  {/* Pulsing ring */}
+                  <div className="absolute w-5 h-5 border border-[#58D8D0]/60 rounded-full animate-ping pointer-events-none" />
+                </button>
 
-                  {isSelected && (
-                    <div className="flex flex-col gap-0.5 text-[8px] text-white/80 pt-1 mt-1 border-t border-white/20">
-                      <div className="flex items-center justify-between font-mono tabular-nums text-slate-300">
-                        <span>LAT: {Math.abs(site.latitudeDeg).toFixed(2)}°S</span>
-                        <span>LON: {site.longitudeDeg >= 0 ? `${site.longitudeDeg.toFixed(2)}°E` : `${Math.abs(site.longitudeDeg).toFixed(2)}°W`}</span>
-                      </div>
-                      <div className="flex items-center justify-between text-slate-400">
-                        <span>ELEV: {site.elevationMeters ? `${site.elevationMeters > 0 ? '+' : ''}${site.elevationMeters.toFixed(0)}m` : '0m'}</span>
-                        <span className={`px-1 py-0.2 font-bold uppercase text-[7.5px] border ${
-                          liveSunlightStatus.isIlluminated
-                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/50'
-                            : 'bg-rose-500/20 text-rose-300 border-rose-400/50'
-                        }`}>
-                          {liveSunlightStatus.isIlluminated ? '☀️ ILLUMINATED' : '🌑 IN SHADOW'}
+                {/* Details Card (Shown ONLY when the user clicks the point) */}
+                {showDetailsCard && (
+                  <div 
+                    className="absolute bottom-3 left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-auto cursor-default z-30 animate-in fade-in zoom-in-95 duration-100"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="font-mono select-none bg-black/95 border border-[#58D8D0] shadow-[0_0_20px_rgba(88,216,208,0.5)] p-2 min-w-[195px] rounded-none">
+                      <div className="flex items-center justify-between gap-2 border-b border-white/20 pb-1 mb-1.5">
+                        <span className="font-bold uppercase tracking-wider text-[#58D8D0] text-[10px]">
+                          {formatSiteShortName(site.name)}
                         </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 bg-[#58D8D0] rounded-full shrink-0" />
+                          <button 
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setShowDetailsCard(false);
+                            }}
+                            className="text-white/60 hover:text-white text-[11px] leading-none px-1 py-0.5 rounded-none cursor-pointer ml-1"
+                            title="Close details"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col gap-1 text-[8.5px] text-white/90">
+                        <div className="flex items-center justify-between font-mono tabular-nums text-slate-300">
+                          <span>LAT: {Math.abs(site.latitudeDeg).toFixed(2)}°S</span>
+                          <span>LON: {site.longitudeDeg >= 0 ? `${site.longitudeDeg.toFixed(2)}°E` : `${Math.abs(site.longitudeDeg).toFixed(2)}°W`}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-slate-400">
+                          <span>ELEV: {site.elevationMeters ? `${site.elevationMeters > 0 ? '+' : ''}${site.elevationMeters.toFixed(0)}m` : '0m'}</span>
+                          <span className={`px-1.5 py-0.5 font-bold uppercase text-[8px] border ${
+                            liveSunlightStatus.isIlluminated
+                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/50'
+                              : 'bg-rose-500/20 text-rose-300 border-rose-400/50'
+                          }`}>
+                            {liveSunlightStatus.isIlluminated ? '☀️ ILLUMINATED' : '🌑 IN SHADOW'}
+                          </span>
+                        </div>
                       </div>
                     </div>
-                  )}
-                </div>
 
-                {/* Pin Target Box */}
-                <div className="relative flex items-center justify-center">
-                  <div 
-                    className={`w-3.5 h-3.5 border border-white/80 bg-black/60 flex items-center justify-center rounded-none ${
-                      isSelected ? 'border-white bg-[#58D8D0]/30 shadow-[0_0_10px_#58D8D0]' : ''
-                    }`}
-                  >
-                    <div 
-                      className="w-1.5 h-1.5 rounded-none" 
-                      style={{ backgroundColor: isSelected ? '#FFFFFF' : (site.pinColor || '#58D8D0') }} 
-                    />
+                    {/* Micro connector line from card to surface reticle */}
+                    <div className="w-px h-2 bg-[#58D8D0]" />
                   </div>
-                </div>
-
-                <div className={`w-px ${isSelected ? 'h-3 bg-[#58D8D0]' : 'h-2 bg-white/40'}`} />
+                )}
               </div>
             );
           })}
@@ -2494,6 +2662,7 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
             <span>RESET</span>
           </button>
 
+
           {/* Monospace Clock Display with Synchronization Status & Interactive Popover Trigger */}
           <div className="relative" ref={datePickerContainerRef}>
             <button
@@ -2506,7 +2675,8 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
                   : 'border-white/20 text-white hover:border-[#58D8D0]/70 hover:bg-white/5'
               }`}
             >
-              <Clock size={10} className={isLive ? "text-emerald-400 animate-pulse" : "text-[#58D8D0]"} />
+              <Calendar size={11} className={isLive ? "text-emerald-400 animate-pulse" : "text-[#58D8D0]"} />
+              <Clock size={10} className="text-white/40 hidden sm:inline" />
               <span className="truncate max-w-[140px] sm:max-w-none">{formattedSimUtc}</span>
               <span className={`text-[8.5px] px-1 py-0.2 font-mono uppercase tracking-widest hidden sm:inline-block ${
                 isLive
@@ -2582,7 +2752,7 @@ export const LunarInteractiveMap: React.FC<LunarInteractiveMapProps> = ({
                     min="1969-01-01"
                     max="2050-01-01"
                     onChange={(e) => handleDateInputChange(e.target.value)}
-                    className="w-full bg-black/80 border border-white/25 focus:border-[#58D8D0] focus:ring-1 focus:ring-[#58D8D0]/50 px-2.5 py-1.5 text-xs text-white font-mono tracking-wider outline-none transition-all cursor-pointer rounded-none"
+                    className="w-full bg-black/80 border border-white/25 focus:border-[#58D8D0] focus:ring-1 focus:ring-[#58D8D0]/50 px-2.5 py-1.5 text-xs text-white font-mono tracking-wider outline-none transition-all cursor-pointer rounded-none [color-scheme:dark]"
                   />
                 </div>
 

@@ -63,18 +63,49 @@ export function getDualOpCellColor(p: TimelinePoint): { hexColor: string; label:
   return { hexColor: '#090B0E', label: 'No Sun / No Comm' };
 }
 
+export type TimelineSpanMode = '1_HOUR' | '1_DAY';
+
 export const MultiTrackTimeline: React.FC<MultiTrackTimelineProps> = ({
   site,
   currentEpochIso,
   onSelectEpoch,
 }) => {
-  const [durationHours, setDurationHours] = useState<number>(168);
+  const [spanMode, setSpanMode] = useState<TimelineSpanMode>('1_DAY');
   const [timelineData, setTimelineData] = useState<TimelineResponse | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
-  // Fetch timeline data whenever site, base date, or duration changes
+  // Compute start timestamp, duration, step size, and change detection key from currentEpochIso
+  const { startIso, durationHours, stepSeconds, epochWindowKey } = useMemo(() => {
+    const dateObj = new Date(currentEpochIso);
+    const valid = !isNaN(dateObj.getTime());
+    const yr = valid ? dateObj.getUTCFullYear() : 2026;
+    const mo = valid ? dateObj.getUTCMonth() : 9;
+    const day = valid ? dateObj.getUTCDate() : 14;
+    const hr = valid ? dateObj.getUTCHours() : 12;
+
+    if (spanMode === '1_HOUR') {
+      const start = new Date(Date.UTC(yr, mo, day, hr, 0, 0, 0)).toISOString();
+      return {
+        startIso: start,
+        durationHours: 1,
+        stepSeconds: 60, // 60 1-minute steps for 1-hour graph width
+        epochWindowKey: `${yr}-${String(mo + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hr).padStart(2, '0')}`,
+      };
+    } else {
+      // 1 DAY (24 Hours)
+      const start = new Date(Date.UTC(yr, mo, day, 0, 0, 0, 0)).toISOString();
+      return {
+        startIso: start,
+        durationHours: 24,
+        stepSeconds: 900, // 96 15-minute steps for 1-day graph width
+        epochWindowKey: `${yr}-${String(mo + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
+      };
+    }
+  }, [currentEpochIso, spanMode]);
+
+  // Fetch timeline data whenever site, epoch window key, or span mode changes
   useEffect(() => {
     let isCancelled = false;
 
@@ -83,12 +114,6 @@ export const MultiTrackTimeline: React.FC<MultiTrackTimelineProps> = ({
       setError(null);
 
       try {
-        // Start from beginning of current observation date (00:00:00Z)
-        const dateObj = new Date(currentEpochIso);
-        const startIso = isNaN(dateObj.getTime())
-          ? '2026-10-14T00:00:00Z'
-          : new Date(Date.UTC(dateObj.getUTCFullYear(), dateObj.getUTCMonth(), dateObj.getUTCDate(), 0, 0, 0)).toISOString();
-
         const data = await lunarApi.getTimelineData({
           site: {
             latitudeDeg: site.latitudeDeg,
@@ -97,7 +122,7 @@ export const MultiTrackTimeline: React.FC<MultiTrackTimelineProps> = ({
           },
           startTimeUtc: startIso,
           durationHours,
-          stepSeconds: 3600,
+          stepSeconds,
         });
 
         if (!isCancelled) {
@@ -119,11 +144,22 @@ export const MultiTrackTimeline: React.FC<MultiTrackTimelineProps> = ({
     return () => {
       isCancelled = true;
     };
-  }, [site.latitudeDeg, site.longitudeDeg, site.elevationMeters, currentEpochIso.slice(0, 10), durationHours]);
+  }, [site.latitudeDeg, site.longitudeDeg, site.elevationMeters, epochWindowKey, spanMode, startIso, durationHours, stepSeconds]);
 
   const points = useMemo(() => timelineData?.timelinePoints || [], [timelineData]);
 
-  // Current simulation cursor index - attains the exact timing from the simulation toolbar (e.g. 2026-10-14 12:00:00 UTC)
+  // Exact continuous percentage position of the Timing Cursor (the white line) across the total graph width
+  const cursorPercent = useMemo(() => {
+    if (points.length === 0) return 0;
+    const currentMs = new Date(currentEpochIso).getTime();
+    const startMs = new Date(startIso).getTime();
+    const totalMs = durationHours * 3600 * 1000;
+    if (totalMs <= 0) return 0;
+    const pct = ((currentMs - startMs) / totalMs) * 100;
+    return Math.max(0, Math.min(100, pct));
+  }, [points.length, currentEpochIso, startIso, durationHours]);
+
+  // Current discrete simulation cursor index - attains the closest point for metric readout
   const activeCursorIndex = useMemo(() => {
     if (points.length === 0) return -1;
     const currentMs = new Date(currentEpochIso).getTime();
@@ -171,29 +207,36 @@ export const MultiTrackTimeline: React.FC<MultiTrackTimelineProps> = ({
           </span>
         </div>
 
-        {/* Duration Selector */}
-        <div className="flex items-center gap-1 font-mono text-xs">
-          <span className="text-white/40 text-[9.5px] uppercase mr-1">INTERVAL:</span>
-          {[
-            { hrs: 24, label: '24H' },
-            { hrs: 48, label: '48H' },
-            { hrs: 72, label: '72H' },
-            { hrs: 168, label: '7 DAYS (168H)' },
-          ].map((item) => (
-            <button
-              key={item.hrs}
-              type="button"
-              onClick={() => setDurationHours(item.hrs)}
-              className={`px-2.5 py-1 text-[9.5px] font-bold uppercase transition-all cursor-pointer rounded-none ${
-                durationHours === item.hrs
-                  ? 'bg-white text-black border border-white font-extrabold'
-                  : 'bg-black/60 text-white/60 hover:text-white border border-white/20 hover:bg-white/10'
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
-          {isLoading && <RefreshCw size={12} className="animate-spin text-white/50 ml-2" />}
+        {/* 2 Graph Width Options: 1 HOUR and 1 DAY */}
+        <div className="flex items-center gap-1.5 font-mono text-xs">
+          <span className="text-white/40 text-[9.5px] uppercase tracking-wider font-semibold mr-1">
+            GRAPH WIDTH:
+          </span>
+          <button
+            type="button"
+            onClick={() => setSpanMode('1_HOUR')}
+            title="Total showing of graph width: 1 Hour (minute-by-minute)"
+            className={`px-3 py-1 text-[9.5px] font-bold uppercase tracking-wider transition-all cursor-pointer rounded-none ${
+              spanMode === '1_HOUR'
+                ? 'bg-[#58D8D0] text-black border border-[#58D8D0] font-extrabold shadow-[0_0_12px_rgba(88,216,208,0.35)]'
+                : 'bg-black/80 text-white/60 hover:text-white border border-white/20 hover:bg-white/10'
+            }`}
+          >
+            1 HOUR
+          </button>
+          <button
+            type="button"
+            onClick={() => setSpanMode('1_DAY')}
+            title="Total showing of graph width: 1 Day (24 Hours)"
+            className={`px-3 py-1 text-[9.5px] font-bold uppercase tracking-wider transition-all cursor-pointer rounded-none ${
+              spanMode === '1_DAY'
+                ? 'bg-[#58D8D0] text-black border border-[#58D8D0] font-extrabold shadow-[0_0_12px_rgba(88,216,208,0.35)]'
+                : 'bg-black/80 text-white/60 hover:text-white border border-white/20 hover:bg-white/10'
+            }`}
+          >
+            1 DAY
+          </button>
+          {isLoading && <RefreshCw size={12} className="animate-spin text-[#58D8D0] ml-2" />}
         </div>
       </div>
 
@@ -355,7 +398,7 @@ export const MultiTrackTimeline: React.FC<MultiTrackTimelineProps> = ({
               </span>
               <div className="relative flex-1 h-8 bg-black border border-white/25 flex overflow-hidden shadow-inner">
                 {points.map((p, idx) => {
-                  const isCursor = idx === activeCursorIndex;
+                  const isCursorCell = idx === activeCursorIndex;
                   const isLit = p.sun.isVisible;
                   return (
                     <div
@@ -364,15 +407,23 @@ export const MultiTrackTimeline: React.FC<MultiTrackTimelineProps> = ({
                       onMouseEnter={() => setHoveredIndex(idx)}
                       onMouseLeave={() => setHoveredIndex(null)}
                       style={{ backgroundColor: isLit ? '#F59E0B' : '#121418' }}
-                      className="flex-1 h-full cursor-pointer transition-transform relative border-r border-black/20 hover:scale-y-110 hover:z-10"
+                      className={`flex-1 h-full cursor-pointer transition-transform relative border-r border-black/20 hover:scale-y-110 hover:z-10 ${
+                        isCursorCell ? 'ring-1 ring-white/60' : ''
+                      }`}
                       title={`${formatEpochUtc(p.epochUtc)} | Sun El: ${p.sun.elevationDeg > 0 ? '+' : ''}${p.sun.elevationDeg.toFixed(2)}° (${isLit ? 'Daylight' : 'Shadow'})`}
-                    >
-                      {isCursor && (
-                        <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-1.5 bg-white z-20 shadow-[0_0_10px_white]" />
-                      )}
-                    </div>
+                    />
                   );
                 })}
+
+                {/* Continuous White Timing Cursor Line with Top Notch */}
+                {points.length > 0 && (
+                  <div
+                    className="absolute top-0 bottom-0 w-[2px] bg-white z-30 shadow-[0_0_8px_white,0_0_14px_rgba(255,255,255,0.95)] pointer-events-none -translate-x-1/2 transition-[left] duration-75"
+                    style={{ left: `${cursorPercent}%` }}
+                  >
+                    <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-white rotate-45 shadow-[0_0_6px_white]" />
+                  </div>
+                )}
               </div>
             </div>
 
@@ -383,7 +434,7 @@ export const MultiTrackTimeline: React.FC<MultiTrackTimelineProps> = ({
               </span>
               <div className="relative flex-1 h-8 bg-black border border-white/25 flex overflow-hidden shadow-inner">
                 {points.map((p, idx) => {
-                  const isCursor = idx === activeCursorIndex;
+                  const isCursorCell = idx === activeCursorIndex;
                   const isComm = p.earth.isVisible;
                   return (
                     <div
@@ -392,15 +443,21 @@ export const MultiTrackTimeline: React.FC<MultiTrackTimelineProps> = ({
                       onMouseEnter={() => setHoveredIndex(idx)}
                       onMouseLeave={() => setHoveredIndex(null)}
                       style={{ backgroundColor: isComm ? '#38BDF8' : '#0F172A' }}
-                      className="flex-1 h-full cursor-pointer transition-transform relative border-r border-black/20 hover:scale-y-110 hover:z-10"
+                      className={`flex-1 h-full cursor-pointer transition-transform relative border-r border-black/20 hover:scale-y-110 hover:z-10 ${
+                        isCursorCell ? 'ring-1 ring-white/60' : ''
+                      }`}
                       title={`${formatEpochUtc(p.epochUtc)} | Earth El: ${p.earth.elevationDeg > 0 ? '+' : ''}${p.earth.elevationDeg.toFixed(2)}° (${isComm ? 'Direct LOS Open' : 'Blocked'})`}
-                    >
-                      {isCursor && (
-                        <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-1.5 bg-white z-20 shadow-[0_0_10px_white]" />
-                      )}
-                    </div>
+                    />
                   );
                 })}
+
+                {/* Continuous White Timing Cursor Line */}
+                {points.length > 0 && (
+                  <div
+                    className="absolute top-0 bottom-0 w-[2px] bg-white z-30 shadow-[0_0_8px_white,0_0_14px_rgba(255,255,255,0.95)] pointer-events-none -translate-x-1/2 transition-[left] duration-75"
+                    style={{ left: `${cursorPercent}%` }}
+                  />
+                )}
               </div>
             </div>
 
@@ -411,7 +468,7 @@ export const MultiTrackTimeline: React.FC<MultiTrackTimelineProps> = ({
               </span>
               <div className="relative flex-1 h-8 bg-black border border-emerald-500/30 flex overflow-hidden shadow-inner">
                 {points.map((p, idx) => {
-                  const isCursor = idx === activeCursorIndex;
+                  const isCursorCell = idx === activeCursorIndex;
                   const isDual = p.bothVisible;
                   return (
                     <div
@@ -422,31 +479,61 @@ export const MultiTrackTimeline: React.FC<MultiTrackTimelineProps> = ({
                       style={{ backgroundColor: isDual ? '#10B981' : '#0D1015' }}
                       className={`flex-1 h-full cursor-pointer transition-transform relative border-r border-black/20 hover:scale-y-110 hover:z-10 ${
                         isDual ? 'shadow-[inset_0_0_8px_rgba(16,185,129,0.3)]' : ''
-                      }`}
+                      } ${isCursorCell ? 'ring-1 ring-white/60' : ''}`}
                       title={`${formatEpochUtc(p.epochUtc)} | Dual Status: ${isDual ? 'SIMULTANEOUS (Sun & Comm Meet)' : 'NO (Single or Shadowed)'} | Sun: ${p.sun.elevationDeg > 0 ? '+' : ''}${p.sun.elevationDeg.toFixed(1)}° | Earth: ${p.earth.elevationDeg > 0 ? '+' : ''}${p.earth.elevationDeg.toFixed(1)}°`}
-                    >
-                      {isCursor && (
-                        <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-1.5 bg-white z-20 shadow-[0_0_10px_white]" />
-                      )}
-                    </div>
+                    />
                   );
                 })}
+
+                {/* Continuous White Timing Cursor Line with Bottom Notch */}
+                {points.length > 0 && (
+                  <div
+                    className="absolute top-0 bottom-0 w-[2px] bg-white z-30 shadow-[0_0_8px_white,0_0_14px_rgba(255,255,255,0.95)] pointer-events-none -translate-x-1/2 transition-[left] duration-75"
+                    style={{ left: `${cursorPercent}%` }}
+                  >
+                    <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-white rotate-45 shadow-[0_0_6px_white]" />
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Time Axis Labels */}
-            <div className="flex items-center gap-2 pt-0.5 text-[10px] text-white/50 font-mono">
+            {/* Time Axis Labels for 1 HOUR and 1 DAY spans */}
+            <div className="flex items-center gap-2 pt-1 text-[10px] text-white/50 font-mono">
               <span className="w-32 shrink-0 uppercase tracking-wider font-semibold">TIME (UTC)</span>
-              <div className="flex-1 flex justify-between px-0.5">
+              <div className="flex-1 flex justify-between px-0.5 text-[9.5px]">
                 {points.length > 0 && (
                   <>
-                    <span>{points[0].epochUtc.slice(5, 16).replace('T', ' ')} UTC</span>
-                    {points.length > 12 && (
-                      <span className="text-white/70 font-semibold">
-                        {points[Math.floor(points.length / 2)].epochUtc.slice(5, 16).replace('T', ' ')} UTC
+                    <span className="text-white/70 font-semibold">
+                      {spanMode === '1_HOUR'
+                        ? `${points[0].epochUtc.slice(5, 10)} ${points[0].epochUtc.slice(11, 16)} UTC`
+                        : `${points[0].epochUtc.slice(5, 10)} 00:00 UTC`}
+                    </span>
+                    {points.length > 4 && (
+                      <span className="text-white/50">
+                        {spanMode === '1_HOUR'
+                          ? `${points[Math.floor(points.length * 0.25)].epochUtc.slice(11, 16)} UTC`
+                          : `${points[0].epochUtc.slice(5, 10)} 06:00 UTC`}
                       </span>
                     )}
-                    <span>{points[points.length - 1].epochUtc.slice(5, 16).replace('T', ' ')} UTC</span>
+                    {points.length > 2 && (
+                      <span className="text-[#58D8D0] font-bold">
+                        {spanMode === '1_HOUR'
+                          ? `${points[Math.floor(points.length * 0.5)].epochUtc.slice(11, 16)} UTC (30m)`
+                          : `${points[0].epochUtc.slice(5, 10)} 12:00 UTC (12H)`}
+                      </span>
+                    )}
+                    {points.length > 4 && (
+                      <span className="text-white/50">
+                        {spanMode === '1_HOUR'
+                          ? `${points[Math.floor(points.length * 0.75)].epochUtc.slice(11, 16)} UTC`
+                          : `${points[0].epochUtc.slice(5, 10)} 18:00 UTC`}
+                      </span>
+                    )}
+                    <span className="text-white/70 font-semibold">
+                      {spanMode === '1_HOUR'
+                        ? `${points[points.length - 1].epochUtc.slice(11, 16)} UTC`
+                        : `${points[points.length - 1].epochUtc.slice(5, 10)} 24:00 UTC`}
+                    </span>
                   </>
                 )}
               </div>
