@@ -9,9 +9,16 @@
 [![Vite](https://img.shields.io/badge/Vite-8.3-646CFF.svg)](https://vitejs.dev/)
 [![Express](https://img.shields.io/badge/Express-5.3-000000.svg)](https://expressjs.com/)
 
-> 🚀 **Live Deployment**: [https://lunar-missionbrowser-1.onrender.com](https://lunar-missionbrowser-1.onrender.com)
+> 🚀 **Live Deployment**: [https://lunar-missionbrowser-1.onrender.com](https://lunar-missionbrowser-1.onrender.com)  
+> 🏆 **NASA Space Apps Challenge 2026**: Built for our **2nd NASA Space Apps Challenge in 2026** — proudly our **best hackathon experience and project to date**!
 
 **LUNARIS** is an aerospace-grade planetary visualization and mission analysis platform designed for evaluating lunar landing sites, solar illumination regimes, and Direct-to-Earth (DTE) communication windows for NASA's Commercial Lunar Payload Services (CLPS) and Artemis expeditions.
+
+---
+
+## 🌟 Hackathon Journey — NASA Space Apps Challenge 2026
+
+LUNARIS marks our **2nd NASA Space Apps Challenge in 2026**, and stands as our **best hackathon project and experience to date**! We set out to tackle real-world lunar mission planning hurdles with high-fidelity scientific data, fusing JPL DE440 ephemerides, LOLA elevation models, and an interactive unified 3D solar system visualization engine into a cohesive, mission-ready platform.
 
 ---
 
