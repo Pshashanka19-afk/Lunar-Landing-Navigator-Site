@@ -13,7 +13,7 @@ LUNARIS marks our **2nd NASA Space Apps Challenge in 2026**, and stands as our *
 
 ---
 
-## 1. The Challenge
+## 1. The Challengee
 
 Missions targeting the lunar south pole ($85.0^\circ\text{S} - 90.0^\circ\text{S}$) face severe operational and environmental constraints:
 
